@@ -7,6 +7,13 @@ else
 	OPT:=-O$(OLEVEL)
 endif
 
+ifeq ($(EXCLUDEWARN),NONE)
+	EXW:=
+else
+	EXW:=$(EXCLUDEWARN)
+endif
+
+
 ifeq ($(CC),gcc)
 	OPENMP=-fopenmp
 	ifeq ($(OOPTIONS),AVX)
@@ -33,7 +40,7 @@ ifeq ($(CC),icpc)
 endif
 
 # compiler flags for Includes, Warnings, Definitons, Debug, etc: -I, -W, -D
-CFLAGS:=-I/usr/local/include/gsl -Wall -Wno-maybe-uninitialized $(OPENMP) -DARMADILLO=$(ARMADILLO)
+CFLAGS:=-I/usr/local/include/gsl -Wall $(EXW) $(OPENMP) -DARMADILLO=$(ARMADILLO)
 ifeq ($(OLEVEL),DEBUG)
 	CFLAGS:=-g3 $(CFLAGS)
 endif

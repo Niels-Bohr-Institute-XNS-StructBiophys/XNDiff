@@ -501,6 +501,7 @@ class XNDiff
 	const char *unit_V_CRY, *unit_V_ISL, *unit_V_OSL, *unit_V_DM, *unit_V_IRR ; /* see constructor */
 
 	int Xn ;  /* flag, that decides whether X-ray (Xn=-1), neutron (Xn=+1) or both patterns (average of both, Xn=0) should be computed */
+
 	dcmplx ***FFF_X ; /* structure amplitude for X-rays [nm] */
 	dcmplx ***FFF_n ; /* structure amplitude for neutrons [nm] */
 
@@ -517,6 +518,11 @@ class XNDiff
 	bool distr_flag ;
 
 	bool weight_flag ;
+
+	bool convergence_flag ;
+	int convergence_mode ;
+	double convergence_treshold ;
+	double convergence_frac ;
 
 	int init_n_rand ;
 	bool init_n_rand_userdef ;
@@ -5114,8 +5120,7 @@ class XNDiff
 
 
 	/* generate output files with Yc(i)_X/n */
-	/* for (d)Yi_n use MULT_INC = MULT/(nav_pc*nav_ac) instead of MULT as for (d)Yc_n
-	   because for the incoherent scattering no orientational average was performed */
+	/* for (d)Yi_n use MULT_INC = MULT/(nav_pc*nav_ac) instead of MULT as for (d)Yc_n because for the incoherent scattering no orientational average was performed */
 	void write_Y( char *oname, const char *presp, char X_or_n, int C_REP, unsigned int MULT, char *MULT_str, double SUM_WEIGHT, double V_CRY, double V_ISL, double V_OSL, double V_DM, double V_IRR, const char *Yc_name, double **Yc, const char *Yi_name=NULL, double *Yi=NULL )
 	{
 		int min_num = 15 ;
@@ -7819,11 +7824,13 @@ class XNDiff
 		double ***dB_n ;				/* nspsp x nms/1 x sld_multi.n, no par->np dependence necessary */
 		double **B_n ;					/* nspsp x sld_multi.n */
 
-		double ***Yc_X ;                                /* par->nsp x 10 x par->np, Y[m][0...9][i] pointer to the 10 coherent structure parts */
-		double ***Yc_X_parallel_thread ;
+		double ***Yc_X ;				/* par->nsp x 10 x par->np, Y[m][0...9][i] pointer to the 10 coherent structure parts */
+		double ***dYc_X	;				/* par->nsp x 10 x par->np, Y[m][0...9][i] pointer to the 10 coherent structure parts */
+		double ***dYc_X_parallel_thread ;
 		double dYc_X_stack[10] ;
 		double ***Yc_n ;				/* par->nsp x 10 x par->np, Y[m][0...9][i] pointer to the 10 coherent structure parts */
-		double ***Yc_n_parallel_thread ;
+		double ***dYc_n ;				/* par->nsp x 10 x par->np, Y[m][0...9][i] pointer to the 10 coherent structure parts */
+		double ***dYc_n_parallel_thread ;
 		double dYc_n_stack[10] ;
 		double **Yi_n ;					/* par->nsp x 4, Y[m][q] pointer to the 4 incoherent structure parts */
 
@@ -7909,8 +7916,14 @@ class XNDiff
 		unsigned int* MULTIPLICITY ;
 		const char presp[64] = "# " ;
 
-		time_t start, now, last; /* timer events */
+		/* timer events */
+		time_t start, now, last;
 
+		/* convergence stuff in member function */
+		unsigned int convergence_counter, convergence_counter_success, convergence_res1, convergence_res2 ;
+		double convergence_dY_rel, convergence_dY_rel_sum ; 
+
+		/* local extension in member function */ 
 		char extensiondecision[1024];
 		char extensionrepeats[1024];
 		unsigned int repeatsincrease;
@@ -8525,11 +8538,16 @@ class XNDiff
 			}
 		}
 
-		/* Yc(i)_X/n are double matrices of size ( nspsp x 10(4) x par->np ) */
-		if ( Xn >= 0 ) { Yc_X = (double ***) calloc( nspsp, sizeof(double **)) ; }
+		/* (d)Yc(i)_X/n are double matrices of size ( nspsp x 10(coh.)(+4 incoh.) x par->np ) */
+		if ( Xn >= 0 )
+		{
+			Yc_X = (double ***) calloc( nspsp, sizeof(double **)) ;
+			dYc_X = (double ***) calloc( nspsp, sizeof(double **)) ;
+		}
 		if ( Xn <= 0 ) 
 		{
 			Yc_n = (double ***) calloc( nspsp, sizeof(double **)) ;
+			dYc_n = (double ***) calloc( nspsp, sizeof(double **)) ;
 			Yi_n = (double **) calloc( nspsp, sizeof(double **)) ;
 		}
 
@@ -8538,19 +8556,31 @@ class XNDiff
 			if ( Xn >= 0 )
 			{
 				Yc_X[i] = (double **) calloc( 10, sizeof(double *)) ;
-				for (int j=0; j<10; ++j) 
+				dYc_X[i] = (double **) calloc( 10, sizeof(double *)) ;
+				for ( int j=0; j<10; ++j) 
 				{
 					Yc_X[i][j] = (double *) calloc( par->np, sizeof(double)) ;
-					for ( unsigned int k=0; k<par->np; ++k) { Yc_X[i][j][k] = 0.0 ; }
+					dYc_X[i][j] = (double *) calloc( par->np, sizeof(double)) ;
+					for ( unsigned int k=0; k<par->np; ++k)
+					{
+						Yc_X[i][j][k] = 0.0 ;
+						dYc_X[i][j][k] = 0.0 ;
+					}
 				}
 			}
 			if ( Xn <= 0 )
 			{
 				Yc_n[i] = (double **) calloc( 10, sizeof(double *)) ;
+				dYc_n[i] = (double **) calloc( 10, sizeof(double *)) ;
 				for (int j=0; j<10; ++j)
 				{
 					Yc_n[i][j] = (double *) calloc( par->np, sizeof(double)) ;
-					for ( unsigned int k=0; k<par->np; ++k) { Yc_n[i][j][k] = 0.0 ; }
+					dYc_n[i][j] = (double *) calloc( par->np, sizeof(double)) ;
+					for ( unsigned int k=0; k<par->np; ++k)
+					{
+						Yc_n[i][j][k] = 0.0 ;
+						dYc_n[i][j][k] = 0.0 ;
+					}
 				}
 
 				Yi_n[i] = (double *) calloc( 4, sizeof(double)) ;
@@ -8612,6 +8642,23 @@ class XNDiff
 				fprintf( logfile, "%sPolar: av_p1=%10.5G, av_p2=%10.5G\n", "\t", par->av_pol[0],  par->av_pol[1]) ;
 				fprintf( logfile, "%sAzimuthal: av_a1=%10.5G, av_a2=%10.5G\n\n", "\t", par->av_azi[0],  par->av_azi[1]) ;
 			}
+
+			if ( convergence_mode > 0)
+			{
+				fprintf( logfile, "%sConvergence checks for Yc will be applied in convergence_mode %d\n", "\t", convergence_mode) ;
+				fprintf( logfile, "%s\tconvergence_treshold = %4.3lf\n", "\t", convergence_treshold) ;
+				if ( convergence_mode == 2)
+				{
+					fprintf( logfile, "%s\tconvergence_frac = %4.3lf\n", "\t", convergence_frac) ;
+				}
+			}
+			else
+			{
+				fprintf( logfile, "%sNo check of convergence for Yc will be applied, all c_rep steps are applied\n", "\t") ;
+			}
+			fprintf( logfile, "\n") ;
+
+
 			#pragma omp parallel if ( openmp_flag )
 			{
 				if ( omp_in_parallel() )
@@ -8660,17 +8707,17 @@ class XNDiff
 
 		/* FIRST loop ensemble averaging */
 		sum_weight_factor = 0.0 ;
-		for ( unsigned int c_rep=0; c_rep<par->nr; ++c_rep)
+		for ( unsigned int c_rep=0; c_rep < par->nr; ++c_rep)
 		{
 			if ( time_flag > 1 )
 			{
-				pr = 100.0*((double) c_rep)/((double) par->nr) ;
+				pr = 100.0 * ( (double) c_rep ) / ( (double) par->nr ) ;
 				time(&now) ;
 				remtime( (long int)(difftime( now, rep_start)), pr, &rtstr[0]) ;
 			}
 
 			/* write event of a new stack to logfile */
-			if ( log_flag ) { fprintf( logfile, "%s*** -> New Stack: c_rep: %d\n", "\t", c_rep) ; fflush(logfile) ; }
+			if ( log_flag ) { fprintf( logfile, "%s*** -> New Stack: c_rep: %d ***\n", "\t", c_rep) ; fflush(logfile) ; }
 
 
 			/* protocol current memory */
@@ -9299,11 +9346,11 @@ class XNDiff
 			   Outer parallel loop variable must not be declared private, but nested (inner) loop counters have to be declared private in C(++) !!!
 			   Similar settings are applied in compute_structure_amplitude().
 			*/
-			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, Yc_X_parallel_thread, Yc_n_parallel_thread) shared( dS_X, dS_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
+			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread) shared( dS_X, dS_n, dYc_X, dYc_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
 			{
 				/* prepare parallel region, allocate dynamic arrays that should be used as private variables
 				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, Yc_X_parallel_thread, Yc_n_parallel_thread
+				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				   Note that variables allocated/defined within a parallel section are by default private.
 				   dE_X/n and related variables are private for each thread, their data will be written to newly introduced private dummy arrays like
 				   dS_X/n_parallel_thread, dYc_X/n_parallel_thread and related ones. They will be at the end written to dS_X/n, dYc_X/n etc.
@@ -9321,22 +9368,28 @@ class XNDiff
 				}
 
 				/* dE_X/n is a dcmplx matrix of size ( par->nsp x par->nms x rho/sld_multi.n ) */
-				if ( Xn >= 0 ) { dE_X = (dcmplx ***) calloc( par->nsp, sizeof(dcmplx **)) ; }
-				if ( Xn <= 0 ) { dE_n = (dcmplx ***) calloc( par->nsp, sizeof(dcmplx **)) ; }
-
-				for ( mm=0; mm<par->nsp; ++mm) 
+				if ( Xn >= 0 )
 				{
-					if ( Xn >= 0 )
+					dE_X = (dcmplx ***) calloc( par->nsp, sizeof(dcmplx **)) ;
+
+					for ( mm=0; mm<par->nsp; ++mm) 
 					{
 						dE_X[mm] = (dcmplx **) calloc( par->nms, sizeof(dcmplx *)) ;
 						for ( pp=0; pp<par->nms; ++pp) { dE_X[mm][pp] = (dcmplx *) calloc( rho_multi.n, sizeof(dcmplx)) ; }
 					}
-					if ( Xn <= 0 )
+
+				}
+				if ( Xn <= 0 )
+				{
+					dE_n = (dcmplx ***) calloc( par->nsp, sizeof(dcmplx **)) ;
+
+					for ( mm=0; mm<par->nsp; ++mm) 
 					{
 						dE_n[mm] = (dcmplx **) calloc( par->nms, sizeof(dcmplx *)) ;
 						for ( pp=0; pp<par->nms; ++pp) { dE_n[mm][pp] = (dcmplx *) calloc( sld_multi.n, sizeof(dcmplx)) ; }
 					}
 				}
+
 
 				exp_N3Qv3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				exp_N3Qw3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
@@ -9393,19 +9446,19 @@ class XNDiff
 				}
 
 				/* Yc_X/n_parallel_thread */
-				if ( Xn >= 0 ) { Yc_X_parallel_thread = (double ***) calloc( nspsp, sizeof(double **)) ; }
-				if ( Xn <= 0 ) { Yc_n_parallel_thread = (double ***) calloc( nspsp, sizeof(double **)) ; }
+				if ( Xn >= 0 ) { dYc_X_parallel_thread = (double ***) calloc( nspsp, sizeof(double **)) ; }
+				if ( Xn <= 0 ) { dYc_n_parallel_thread = (double ***) calloc( nspsp, sizeof(double **)) ; }
 				for ( mm=0; mm<nspsp; ++mm)
 				{
 					if ( Xn >= 0 )
 					{
-						Yc_X_parallel_thread[mm] = (double **) calloc( 10, sizeof(double *)) ;
-						for ( pp=0; pp<10; ++pp) { Yc_X_parallel_thread[mm][pp] = (double *) calloc( par->np, sizeof(double)) ; }
+						dYc_X_parallel_thread[mm] = (double **) calloc( 10, sizeof(double *)) ;
+						for ( pp=0; pp<10; ++pp) { dYc_X_parallel_thread[mm][pp] = (double *) calloc( par->np, sizeof(double)) ; }
 					}
 					if ( Xn <= 0 )
 					{
-						Yc_n_parallel_thread[mm] = (double **) calloc( 10, sizeof(double *)) ;
-						for ( pp=0; pp<10; ++pp) { Yc_n_parallel_thread[mm][pp] = (double *) calloc( par->np, sizeof(double)) ; }
+						dYc_n_parallel_thread[mm] = (double **) calloc( 10, sizeof(double *)) ;
+						for ( pp=0; pp<10; ++pp) { dYc_n_parallel_thread[mm][pp] = (double *) calloc( par->np, sizeof(double)) ; }
 					}
 				}
 
@@ -9417,7 +9470,7 @@ class XNDiff
 				for ( kk=0; kk<nav_ac; ++kk)
 				{
 					/* GA, P_osl, P_isl, P, cdummy41, cdummy42, cdummy43, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, dE_X, dE_n will be overwritten */
-					/* dS_X_parallel_thread, dS_n_parallel_thread, Yc_X_parallel_thread, Yc_n_parallel_thread will be updated (+=) within each thread and finally written to the corresponding variables */
+					/* dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread will be updated (+=) within each thread and finally written to the corresponding variables */
 
 					/* reset variables to 0.0 */
 // 					/* par->nsp x par->nms */
@@ -9524,19 +9577,19 @@ class XNDiff
 // 					{
 // 						for ( mm=0; mm<nspsp; ++mm) 
 // 						{
-// 							for ( pp=0; pp<10; ++pp) { free(Yc_X_parallel_thread[mm][pp]) ; }
-// 							free(Yc_X_parallel_thread[mm]) ;
+// 							for ( pp=0; pp<10; ++pp) { free(dYc_X_parallel_thread[mm][pp]) ; }
+// 							free(dYc_X_parallel_thread[mm]) ;
 // 						}
-// 						free(Yc_X_parallel_thread);
+// 						free(dYc_X_parallel_thread);
 // 					}
 // 					if ( Xn <= 0 )
 // 					{
 // 						for ( mm=0; mm<nspsp; ++mm) 
 // 						{
-// 							for ( pp=0; pp<10; ++pp) { free(Yc_n_parallel_thread[mm][pp]) ; }
-// 							free(Yc_n_parallel_thread[mm]) ;
+// 							for ( pp=0; pp<10; ++pp) { free(dYc_n_parallel_thread[mm][pp]) ; }
+// 							free(dYc_n_parallel_thread[mm]) ;
 // 						}
-// 						free(Yc_n_parallel_thread);
+// 						free(dYc_n_parallel_thread);
 // 					}
 
 
@@ -9795,35 +9848,35 @@ class XNDiff
 										/* note that Yc_X[mm][qq][ii] ~ Yc_n[mm][qq][ii] for qq=1...6, because F isn't involved into it */
 										if ( Xn >= 0 )
 										{
-											Yc_X_parallel_thread[mm][0][ii] += cabs2( FFF_X[ii][jj][kk] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
+											dYc_X_parallel_thread[mm][0][ii] += cabs2( FFF_X[ii][jj][kk] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
 
-											Yc_X_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
 
-											Yc_X_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
 
-											Yc_X_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
-											Yc_X_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */ 
-											Yc_X_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
+											dYc_X_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
+											dYc_X_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */ 
+											dYc_X_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_X[ii][jj][kk] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
 										}
 										if ( Xn <= 0 )
 										{
-											Yc_n_parallel_thread[mm][0][ii] += cabs2( FFF_n[ii][jj][kk] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
+											dYc_n_parallel_thread[mm][0][ii] += cabs2( FFF_n[ii][jj][kk] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
 
-											Yc_n_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
 
-											Yc_n_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
 
-											Yc_n_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
-											Yc_n_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
-											Yc_n_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_n[ii][jj][kk] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
 										}
 									} /* mm = 0 ... par->nsp-1 */
 								} /* pp = 0 ... par->nms-1 */
@@ -9995,35 +10048,35 @@ class XNDiff
 										/* note that Yc_X[mm][qq][ii] ~ Yc_n[mm][qq][ii] for qq=1...6, because F isn't involved into it */
 										if ( Xn >= 0 )
 										{
-											Yc_X_parallel_thread[mm][0][ii] += cabs2( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
+											dYc_X_parallel_thread[mm][0][ii] += cabs2( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
 
-											Yc_X_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
 
-											Yc_X_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
-											Yc_X_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
+											dYc_X_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_rho, 2) * weight_factor ; /* [nm^8] */
 
-											Yc_X_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
-											Yc_X_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
-											Yc_X_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
+											dYc_X_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
+											dYc_X_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
+											dYc_X_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_X[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_rho * weight_factor ; /* [nm^5] */
 										}
 										if ( Xn <= 0 )
 										{
-											Yc_n_parallel_thread[mm][0][ii] += cabs2( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
+											dYc_n_parallel_thread[mm][0][ii] += cabs2( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] ) * weight_factor ; /* [nm^2] */
 
-											Yc_n_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][1][ii] += cabs2( P_osl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][2][ii] += cabs2( P_isl[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][3][ii] += cabs2( P[mm][pp] ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
 												
-											Yc_n_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
-											Yc_n_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][4][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P_isl[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][5][ii] += 2.0 * real ( P_osl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
+											dYc_n_parallel_thread[mm][6][ii] += 2.0 * real ( P_isl[mm][pp] * conj( P[mm][pp] ) ) * pow( sc_sld, 2) * weight_factor ; /* [nm^6] */
 
-											Yc_n_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
-											Yc_n_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
-											Yc_n_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][7][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_osl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][8][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P_isl[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
+											dYc_n_parallel_thread[mm][9][ii] += -2.0 * real ( FFF_n[ii][jj][ind_r3[pp]] * GA[mm][pp] * conj( P[mm][pp] ) ) * sc_sld * weight_factor ; /* [nm^4] */
 										}
 									} /* mm = 0 ... par->nsp-1 */
 								} /* pp = 0 ... par->nms-1 */
@@ -10143,7 +10196,7 @@ class XNDiff
 									{
 										for ( mm=0; mm<10; ++mm)
 										{
-											Yc_X_parallel_thread[pp-1+par->nsp][mm][ii] += dYc_X_stack[mm] ;
+											dYc_X_parallel_thread[pp-1+par->nsp][mm][ii] += dYc_X_stack[mm] ;
 										}
 									}
 								}
@@ -10203,7 +10256,7 @@ class XNDiff
 									{
 										for ( mm=0; mm<10; ++mm)
 										{
-											Yc_n_parallel_thread[pp-1+par->nsp][mm][ii] += dYc_n_stack[mm] ;
+											dYc_n_parallel_thread[pp-1+par->nsp][mm][ii] += dYc_n_stack[mm] ;
 										}
 									}
 								}
@@ -10301,14 +10354,16 @@ class XNDiff
 							{
 								#pragma omp critical
 								{
-									Yc_X[mm][pp][ii] += Yc_X_parallel_thread[mm][pp][ii] ;
+									Yc_X[mm][pp][ii] += dYc_X_parallel_thread[mm][pp][ii] ;
+									dYc_X[mm][pp][ii] += dYc_X_parallel_thread[mm][pp][ii] ;
 								}
 							}
 							if ( Xn <= 0 )
 							{
 								#pragma omp critical
 								{
-									Yc_n[mm][pp][ii] += Yc_n_parallel_thread[mm][pp][ii] ;
+									Yc_n[mm][pp][ii] += dYc_n_parallel_thread[mm][pp][ii] ;
+									dYc_n[mm][pp][ii] += dYc_n_parallel_thread[mm][pp][ii] ;
 								}
 							}
 						}
@@ -10319,7 +10374,7 @@ class XNDiff
 
 				/* free dynamic arrays allocated within the parallel region
 				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, Yc_X_parallel_thread, Yc_n_parallel_thread
+				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				*/
 				for ( mm=0; mm<par->nsp; ++mm)
 				{
@@ -10411,19 +10466,19 @@ class XNDiff
 				{
 					for ( mm=0; mm<nspsp; ++mm) 
 					{
-						for ( pp=0; pp<10; ++pp) { free(Yc_X_parallel_thread[mm][pp]) ; }
-						free(Yc_X_parallel_thread[mm]) ;
+						for ( pp=0; pp<10; ++pp) { free(dYc_X_parallel_thread[mm][pp]) ; }
+						free(dYc_X_parallel_thread[mm]) ;
 					}
-					free(Yc_X_parallel_thread);
+					free(dYc_X_parallel_thread);
 				}
 				if ( Xn <= 0 )
 				{
 					for ( mm=0; mm<nspsp; ++mm) 
 					{
-						for ( pp=0; pp<10; ++pp) { free(Yc_n_parallel_thread[mm][pp]) ; }
-						free(Yc_n_parallel_thread[mm]) ;
+						for ( pp=0; pp<10; ++pp) { free(dYc_n_parallel_thread[mm][pp]) ; }
+						free(dYc_n_parallel_thread[mm]) ;
 					}
-					free(Yc_n_parallel_thread);
+					free(dYc_n_parallel_thread);
 				}
 			} /* end pragma parallel */
 
@@ -10546,7 +10601,7 @@ class XNDiff
 
 
 			/* write dS, dB_n to files */
-			if (singlefilesoutput_flag)
+			if ( singlefilesoutput_flag )
 			{
 				for ( unsigned int m=0; m<nspsp; ++m)
 				{
@@ -10585,7 +10640,7 @@ class XNDiff
 
 
 			/* write S_X/n, B_n to files at intermediate time steps if the flag is set */
-			if (intermediatesteps_flag)
+			if ( intermediatesteps_flag )
 			{
 				/* do the output every imsteps of (c_rep+1), even if it is the last repeat.
 				   This allows later an easier batch processing of the files in order to 
@@ -10638,10 +10693,139 @@ class XNDiff
 				else { fprintf( logfile, "%sc_rep: %d done\n\n", "\t", c_rep) ; }
 			}
 			if ( time_flag > 1 ) { time(&last) ; }
-			
-			/* At the the end of the repeats write S_X/n, B_n */
-			/* Provide an option to extend the repeats */
-			if ( ( c_rep + 1 ) == par->nr )
+
+
+
+
+
+			/* 
+			   option to check convergence of the Y_X and Y_n
+			   if convergence is met indicate this via convergence_flag, such that later c_rep loop is prematurely aborted
+			   idea is to set convergence_flag to true and if one condition fails it will be reset to false
+			   both cases, where (1) the integral fraction criteria and (2) a fraction of all data points, are computed and checked if they meet the criteria 
+			 */
+			if ( convergence_mode > 0 )
+			{
+				if ( log_flag )
+				{
+					fprintf( logfile, "\tConvergence check:\n") ;
+					fprintf( logfile, "\t\tX/n\t m\tconv_res1\tconv_res2\tfrac1\tfrac2\tcounter\tcounter_suc\n") ;
+					fflush ( logfile ) ;
+				}
+
+				convergence_flag = true ;
+
+				/* check Xn >= 0 mode for dYc_X */
+				if ( Xn >= 0 )
+				{
+					for ( unsigned int m=0; m<nspsp; ++m) 
+					{
+						/* reset values for all m */ 
+						convergence_dY_rel_sum = 0.0 ;
+						convergence_counter = 0 ;
+						convergence_counter_success = 0 ;
+						convergence_res1 = 1 ;
+						convergence_res2 = 1 ; 
+						for ( unsigned int p=0; p<10; ++p)
+						{ 
+							for ( unsigned int i=0; i<par->np; ++i)
+							{
+								if ( fabs( Yc_X[m][p][i] ) > 0.0 )
+								{
+									++convergence_counter ;
+									convergence_dY_rel = fabs( dYc_X[m][p][i] / Yc_X[m][p][i] ) ;
+									if ( convergence_dY_rel < convergence_treshold ) { ++convergence_counter_success ; }
+									convergence_dY_rel_sum += convergence_dY_rel ;
+								}
+							}
+						}
+						if ( ( convergence_dY_rel_sum / (double) ( convergence_counter ) ) > convergence_treshold ) { convergence_res1 = 0 ; if ( convergence_mode == 1 ) { convergence_flag = false ; } }
+
+						if ( ( (double) convergence_counter_success / (double) ( convergence_counter ) ) < convergence_frac ) { convergence_res2 = 0 ; if ( convergence_mode == 2 ) { convergence_flag = false ; } }
+
+						/* report for each m the convergence results */
+						if ( log_flag ) { fprintf( logfile, "\t\t%.3s\t%2d\t%9d\t%9d\t%4.3f\t%4.3f\t%7d\t%11d\n", "X", m, convergence_res1, convergence_res2, ( convergence_dY_rel_sum / (double) ( convergence_counter ) ), ( (double) convergence_counter_success / (double) ( convergence_counter ) ), convergence_counter, convergence_counter_success ) ; fflush (logfile) ; }
+
+						/* break as soon one convergence criteria fails */
+// deactivated for debugging
+						//if ( convergence_flag == false ) { break ; }
+					}
+				}
+
+				/* check Xn <= 0 mode for dYc_n */
+				if ( Xn <= 0 )
+				{
+					for ( unsigned int m=0; m<nspsp; ++m) 
+					{
+						/* reset values for all m */ 
+						convergence_dY_rel_sum = 0.0 ;
+						convergence_counter = 0 ;
+						convergence_counter_success = 0 ;
+						convergence_res1 = 1 ;
+						convergence_res2 = 1 ;
+						for ( unsigned int p=0; p<10; ++p)
+						{ 
+							for ( unsigned int i=0; i<par->np; ++i)
+							{
+								if ( fabs( Yc_n[m][p][i] ) > 0.0 )
+								{
+									++convergence_counter ;
+									convergence_dY_rel = fabs( dYc_n[m][p][i] / Yc_n[m][p][i] ) ;
+									if ( convergence_dY_rel < convergence_treshold ) { ++convergence_counter_success ; }
+									convergence_dY_rel_sum += convergence_dY_rel ;
+								}
+							}
+						}
+						if ( ( convergence_dY_rel_sum / (double) ( convergence_counter ) ) > convergence_treshold ) { convergence_res1 = 0 ; if ( convergence_mode == 1 ) { convergence_flag = false ; } }
+
+						if ( ( (double) convergence_counter_success / (double) ( convergence_counter ) ) < convergence_frac ) { convergence_res2 = 0 ; if ( convergence_mode == 2 ) { convergence_flag = false ; } }
+
+						/* report for each m the convergence results */
+						if ( log_flag ) { fprintf( logfile, "\t\t%.3s\t%2d\t%9d\t%9d\t%4.3f\t%4.3f\t%7d\t%11d\n", "n", m, convergence_res1, convergence_res2, ( convergence_dY_rel_sum / (double) ( convergence_counter ) ), ( (double) convergence_counter_success / (double) ( convergence_counter ) ), convergence_counter, convergence_counter_success ) ; fflush (logfile) ; }
+
+
+						/* break as soon one convergence criteria fails */
+// deactivated for debugging
+						// if ( convergence_flag == false ) { break ; }
+					}
+				}
+
+
+				/* need to reset dYc_X/n to 0.0 for parallel mode summation */
+				for ( unsigned int m=0; m<nspsp; ++m) 
+				{
+					for ( unsigned int p=0; p<10; ++p)
+					{ 
+						for ( unsigned int i=0; i<par->np; ++i)
+						{
+							if ( Xn >= 0 )
+							{
+								dYc_X[m][p][i] = 0.0 ; 
+							}
+							if ( Xn <= 0 )
+							{
+								dYc_n[m][p][i] = 0.0 ; 
+							}
+						}
+					}
+				}
+				if ( convergence_flag )
+				{
+					if ( log_flag ) { fprintf( logfile, "\t%s\n", "*** Convergence criteria are met ***") ; fflush (logfile) ; }
+					if ( time_flag > 1 ) { fprintf( stdout ,"%s\n", "*** Convergence criteria are met ***") ; fflush( stdout ) ; }
+				}
+				if ( log_flag ) { fprintf( logfile, "\n\n") ; }
+			}
+
+
+
+
+
+			/*
+			   at the the end of the repeats or when convergence is found, write S_X/n, B_n, Yc_X/n, Yi_n
+			   includes option to extend the repeats
+			*/
+			if ( ( ( c_rep + 1 ) == par->nr ) || convergence_flag )
 			{
 				/* Write S to files at the end of the repeats. 
 				   If the repeats are extended the files will be overwritten
@@ -10684,7 +10868,7 @@ class XNDiff
 
 
 				/* -e flag, ignored in -silent mode */
-				if (extension_flag)
+				if ( extension_flag )
 				{
 					fprintf( stdout, "The data has been written from the last (c_rep+1)=%d repeats. \n", c_rep+1) ;
 					fprintf( stdout, "Do you want to proceed with repeats (y) or finish (n)? :\t");
@@ -10698,7 +10882,7 @@ class XNDiff
 							{
 								scanf("%s",extensionrepeats);
 								repeatsincrease = (unsigned int) strtol (extensionrepeats, NULL, 10) ;
-								if (repeatsincrease>0)
+								if ( repeatsincrease > 0 )
 								{
 									par->nr += repeatsincrease ;
 									fprintf( stdout, "Increasing par->nr by %d up to %d \n", repeatsincrease, par->nr );
@@ -10712,7 +10896,7 @@ class XNDiff
 							}
 							break;
 						}
-						else if (!strcmp(extensiondecision,"n"))
+						else if ( !strcmp(extensiondecision, "n"))
 						{
 							break;
 						}
@@ -10722,12 +10906,15 @@ class XNDiff
 						}
 					}
 				}
+
+				// break c_rep loop, if done
+				break ;
 			}
 
 		/* end FIRST loop for over repeats c_rep */
 		}
 
-		if ( time_flag > 1 ) { fprintf( stdout ,"PID %d | R %4d | %-7s | %-42s\n", pid, par->nr, "Done", "Done") ; fflush( stdout ) ; }
+		if ( time_flag > 1 ) { fprintf( stdout ,"PID %d | Ens. Average | %s\n", pid, "Done") ; fflush( stdout ) ; }
 		if ( log_flag ) { fprintf( logfile, "Done\n\n") ; }
 
 		/********************/
@@ -10836,7 +11023,7 @@ class XNDiff
 
 		/* the following arrays have been already deallocated within the parallel region
 		   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-		   dS_X_parallel_thread, dS_n_parallel_thread, Yc_X_parallel_thread, Yc_n_parallel_thread
+		   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 		*/
 
 		/* free S_X/n (nspsp x rho/sld_multi.n x np ), 
@@ -10903,25 +11090,37 @@ class XNDiff
 			free(B_n) ;
 		}
 
-		/* free dYc(i)_X/n which are a double complex matrices of size ( par->nsp x 10(4) x par->np ) */
+		/* free (d)Yc(i)_X/n which are a double complex matrices of size ( par->nsp x 10(4) x par->np ) */
 		if ( Xn >= 0 )
 		{
 			for ( unsigned int i=0; i<nspsp; ++i) 
 			{
-				for ( int j=0; j<10; ++j) { free(Yc_X[i][j]) ; }
+				for ( int j=0; j<10; ++j)
+				{
+					free(Yc_X[i][j]) ;
+					free(dYc_X[i][j]) ;
+				}
 				free(Yc_X[i]) ;
+				free(dYc_X[i]) ;
 			}
 			free(Yc_X);
+			free(dYc_X);
 		}
 		if ( Xn <= 0 )
 		{
 			for ( unsigned int i=0; i<nspsp; ++i)
 			{
-				for (int j=0; j<10; ++j) { free(Yc_n[i][j]) ; }
+				for (int j=0; j<10; ++j)
+				{
+					free(Yc_n[i][j]) ;
+					free(dYc_n[i][j]) ;
+				}
 				free(Yc_n[i]) ;
+				free(dYc_n[i]) ;
 				free(Yi_n[i]) ;
 			}
 			free(Yc_n);
+			free(dYc_n);
 			free(Yi_n);
 		}
 
@@ -11017,6 +11216,17 @@ class XNDiff
 	}
 
 
+
+	/*
+	   in future other methods to parse cmd line options and arguments could be used
+	   https://stackoverflow.com/questions/865668/how-to-parse-command-line-arguments-in-c
+
+	   warnings about maybe-uninitialized-variables for pointers turn up when compiling, since Xn flag cannot so easily be made const int
+	   what does not solve it: const int Xn ; using job1=XNDiff(0), where constructor XNDiff(int Xn_val) : Xn(Xnval) {...}, do job1.eval_cmd_constructor() to get just Xn flag and then call constructor again with job2=XNDiff(job1.Xn_cmd), call job2.eval_cmd() where the -X/n flag stuff etc has been removed
+	   what would work: rm all Xn conditionals on (de)allocation of arrays / pointers, but then they will be allocated even if unused ...
+	   what probably works: ignore warnings for specific variables via #pragma GCC diagnostic ignored "-Wmaybe-uninitialized" foo(pointer_name(s)) ; , but this is not ideal, since definitions are at many places in the code
+	   what work: ignore all warnings of type -Wno-maybe-uninitialized via gcc flag in Makefile
+	*/
 	void eval_cmd (int carg, char **varg)
 	{
 		int idummy ;
@@ -11140,6 +11350,12 @@ class XNDiff
 
 		/* silent mode */
 		silent_flag = false ;
+
+		/* convergence check */
+		convergence_flag = false ; /* assume it has not yet converged by default */
+		convergence_mode = 0 ;	/* do not check convergence by default */
+		convergence_treshold = 0.0 ; /* changes in Yc btw repeats must be 0, applies only for convergence_mode > 0, default is 0 */
+		convergence_frac = 1.0 ; /* fraction of datapoints where convergence is met, applies only for convergence_mode == 1, default is 1 */
 
 		/* default input/output folders */
 		def_ifo = "in/" ;
@@ -11393,6 +11609,25 @@ class XNDiff
 							}
 							else { XNDIFF_ERROR(1) ; }
 						}
+						else if ( !strcmp(varg[i], "-conv") )
+						{
+							/*
+							   read convergence mode and treshold
+							   0 -> no convergence check
+							   1 -> convergence is met when q-averaged relative changes <Yc_X/n>_q are lower than convergence_treshold for each m (sp and st)
+							   2 -> convergence is met when the relative changes dYc_X/n/Yc_X/n are lower than convergence_treshold for a fraction of convergence_frac of data points for each m (sp and st)
+							*/
+							if ( ++i < carg ) { convergence_mode = (int) strtol( varg[i], NULL, 10) ; } else { XNDIFF_ERROR(1) ; }
+							if ( convergence_mode < 0 || convergence_mode > 2 ) { XNDIFF_ERROR(88) ; }
+							if ( convergence_mode > 0 )
+							{
+								if ( ++i < carg ) { convergence_treshold = strtod( varg[i], NULL) ; } else { XNDIFF_ERROR(1) ; }
+							}
+							if ( convergence_mode == 2 )
+							{
+								if ( ++i < carg ) { convergence_frac = strtod( varg[i], NULL) ; } else { XNDIFF_ERROR(1) ; }
+							}
+						}
 						else { XNDIFF_ERROR(3) ; }
 						break ;
 					/* -distr */
@@ -11410,7 +11645,8 @@ class XNDiff
 						{
 							/* -e, allows a proceeding on averaging after finishing the repeats. 
 							   A question will show up after finishing the repeats whether to extend them 
-							   and by which amount of repeats */
+							   and by which amount of repeats
+							*/
 							extension_flag = true ;
 						}
 						else { XNDIFF_ERROR(3) ; }
@@ -12351,7 +12587,8 @@ class XNDiff
 			"Expected \"symop\" clause in symop-file.", /* 084 */
 			"Type of distribution for td1 must be either 0,1 ", /* 085 */
 			"Type of distribution for td2 must be either 0,1,2 ", /* 086 */
-			"Type of stack mode must be either 0,1,2,3 " /* 087 */
+			"Type of stack mode must be either 0,1,2,3 ", /* 087 */
+			"Type of convergence mode must be either 0,1 " /* 088 */
 		} ;
 
 		/* before exit, write and close the logfile */
@@ -12835,8 +13072,9 @@ class XNDiff
 
 int main (int carg, char **varg)
 {
-	XNDiff job=XNDiff();
-	job.eval_cmd(carg,varg);
-	
+
+	XNDiff job = XNDiff() ;
+	job.eval_cmd( carg, varg) ;
+
 	return (0) ;
 }
