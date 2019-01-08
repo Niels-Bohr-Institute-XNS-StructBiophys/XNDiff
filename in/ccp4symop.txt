@@ -1,0 +1,8 @@
+# symmetry operations in the x,y,z form
+# http://www.ccp4.ac.uk/dist/lib/data/syminfo.lib
+# REMIND that all translations must be multiplied with 100
+# e.g. 1/2 -> 100/2 and if you want to make 1-(x-1/2)=-x+3/2 -> -x+300/2 
+# symop x,y+1/2,z-1/2
+# symop -x+1,-y+1/2,-z+3/2
+symop x,y+100/2,z-100/2
+symop -x+100,-y+100/2,-z+300/2
