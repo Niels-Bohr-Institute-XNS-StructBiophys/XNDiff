@@ -1,0 +1,7 @@
+# specify path of CCP4 setup files after 'setup'
+setup /home/mschmiele/CCP4-bin/setup-scripts/sh/ccp4.setup
+setup /home/mschmiele/CCP4-bin/setup-scripts/sh/ccp4-others.setup
+#
+# specify path of pdbset executable after 'pdbset'
+pdbset /home/mschmiele/CCP4-bin/ccp4-6.1.13/bin/pdbset
+# make sure that there are no additional white spaces after the specified paths !

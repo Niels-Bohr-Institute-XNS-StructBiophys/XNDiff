@@ -1,0 +1,34 @@
+# symmetry operations in the x,y,z form
+#symop x,y+1/2,z-1/2
+#symop -x+1,-y+1/2,-z+3/2
+#symop 1.0*x,1.0*y+0.5,z*1.0-0.5
+#symop -1.0*x+1.0,-1.0*y+0.5,-1.0*z+1.5
+#symop +x,+y,z
+#symop x*2.3333+1/10,y*2+0.5,z*1.0-0.5
+#symop -5.0*x+5.5,-1.0*y+0.5,-1.0*z+1.5
+#symop -5.0*x+2*y-5.5,-1.0*z+0.5,-1.0*x+1.5
+#symop x,y,z+1/2
+#symop -x-2.5*y,z+1/2,-x
+#symop x,y+1/4+1/4,-0.25+z-1/4
+#
+# conv triclinic P-1
+#symop x,y,z
+#symop -x,-y,-z
+#
+# betaPPP.cif (like TU, i.e. not chain-aligned)
+#symop x,y+1/2,z-1/2
+#symop -x+1,-y+1/2,-z+3/2
+#
+# betaMMM_mod.cif
+# betaSSS_mod.cif
+#symop z+1/2,x+1/2,y
+#symop 1/2-z,1/2-x,1-y
+#
+# Tetracosane_mod2.cif (same symop as saved in cif)
+#x+1/2,y+1/4,z+1/2
+#x+1/2,y+3/4,z+1/2
+#
+# betaPPP_chainaligned.cif
+symop x,y,z
+symop -x+1,-y+1,-z+1
+
