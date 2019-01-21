@@ -12,6 +12,7 @@
 #symop x,y+1/4+1/4,-0.25+z-1/4
 #symop x,y,z
 #symop -x,-y,-z
+#
 #symop x,y+1/2,z-1/2
 #symop -x+1,-y+1/2,-z+3/2
 symop x,y,z

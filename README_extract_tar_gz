@@ -1,0 +1,12 @@
+Examples:
+cat SSS_180x360_P*_ST_360_400_N100.tar.gz | tar -zxvf - -C /home/martins/projects/BatchMultiFit_SF/out/ --wildcards "SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat" -i
+
+for file in SSS_180x360_P10_*.tar.gz ; do tar -xzvf SSS_180x360_P10_20_ST_360_400_N100.tar.gz -C targetdir/ --wildcards SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat ; done
+
+
+Note that order of args in tar is important:
+-zxvf is fine for .tar.gz but not  -xzvf, i.e. first unzip(z) then extract(x)
+-C for diff output dir must follow tarfile,i.e. must stand before --wildcard
+-i for pipe option can stand on different places
+
+
