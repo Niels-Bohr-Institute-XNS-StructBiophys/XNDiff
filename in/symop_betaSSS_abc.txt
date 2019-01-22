@@ -1,0 +1,7 @@
+# symmetry operations in the x,y,z form
+# 3->1, 1->2, 2->3 for change of unit cell such that a<b<c
+# translation +1/2 to fit 1st molecule better into the unit cell
+# P-1 symop and translation +1 applied on 1st molecule to obtain coordinates for the 2nd one
+symop z,x+1/2,y
+symop 1-z,-x+1/2,1-y
+
