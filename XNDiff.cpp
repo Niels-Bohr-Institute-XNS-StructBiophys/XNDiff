@@ -255,7 +255,7 @@ class XNDiff
 		const char *NEUT_ICSD_INLAY ;
 		const char *NEUT_ICSD_OUTLAY ;
 		const char *NEUT_ICSD_DM ;
-		const char *CONC_CRY ;
+		const char *CONC_TOT ;
 		const char *CONC_DM ;
 	} par_keyword ;
 
@@ -452,9 +452,9 @@ class XNDiff
 	double icsd_cry ; /* neutron incoherent cross section density for the crystal [1/cm] */
 	double sld_cry ; /* neutron scattering length density for the crystal [10^(-6) 1/A^2] */
 
-	bool conc_userdef ; /* flag whether to use default concentrations for conc_dm and conc_cry ( false, 1.0 and 0.01) or those specified in the par-file (true) */
+	bool conc_userdef ; /* flag whether to use default concentrations for conc_dm and conc_tot ( false, 1.0 and 0.01) or those specified in the par-file (true) */
 	double conc_dm ; /* vol% concentration of dispersion medium in the nanosuspension */
-	double conc_cry ; /* vol% concentration of crystals in the nanosuspension */
+	double conc_tot ; /* vol% concentration of crystals in the nanosuspension */
 
 	struct rho_multi_struct
 	{
@@ -617,7 +617,7 @@ class XNDiff
 		this->par_keyword.NEUT_ICSD_INLAY = "NEUT_ICSD_INLAY" ;
 		this->par_keyword.NEUT_ICSD_OUTLAY = "NEUT_ICSD_OUTLAY" ;
 		this->par_keyword.NEUT_ICSD_DM = "NEUT_ICSD_DM" ;
-		this->par_keyword.CONC_CRY = "CONC_CRY" ;
+		this->par_keyword.CONC_TOT = "CONC_TOT" ;
 		this->par_keyword.CONC_DM = "CONC_DM" ;
 
 		this->num_symop = 0 ;
@@ -680,12 +680,10 @@ class XNDiff
 	/* Test computer code if it returns the correct intensity at I(s=0)
 
 	   Use :
-	   conc_cry = 1.0 (and optionally conc_dm = 0.0)
+	   conc_tot = 1.0 (and optionally conc_dm = 0.0)
 	   to normalize only by volume of crystals (without stabilizer layer)
-	   Note that in XNDiff Vtot_irr ~ Vtot_cry / conc_cry, hence only conc_cry counts, 
-	   but not conc_dm, which is only relevant for Vtot_dm (via VN_dm) ~ Vtot_cry * conc_dm / conc_cry 
-	   and by this for B_n and Yi_n
-	   Hence with conc_cry = 1.0 it holds Vtot_irr = Vtot_cry
+	   Note that in XNDiff Vtot_irr ~ Vtot_osl / conc_tot, but not conc_dm, which is only relevant for Vtot_dm (via VN_dm) ~ Vtot_osl * conc_dm / conc_tot  and by this for B_n and Yi_n
+	   Hence with conc_tot = 1.0 it holds Vtot_irr = Vtot_osl
 
 	   Generally normalization is done in XNDiff via :
 	   S_X/n -> S_X/n / MULT(coh) / SUM_WEIGHT_CORR / Vtot_irr
@@ -698,9 +696,9 @@ class XNDiff
 	   V_CRY ~ Vtot_cry ~ volume of crystal
 	   V_ISL ~ Vtot_isl ~ volume of crystal AND inner stabilizer layer
 	   V_OSL ~ Vtot_osl ~ volume of crystal AND inner AND outer stabilizer layers
-	   V_DM and V_IRR correspond to Vtot_dm and Vtot_irr as given from above via Vtot_cry
+	   V_DM and V_IRR correspond to Vtot_dm and Vtot_irr as given from above via Vtot_osl
 	   
-	   V_CRY corresponds physically to the volume of crystal and therefore for XNDiff or later the correct conc_cry should be applied !!!
+	   V_OSL corresponds physically to the volume of the total platelets and therefore for XNDiff or later the correct conc_tot should be applied !!!
 	   ( V_ISL - V_CRY )
 	   and 
 	   ( V_OSL - V_ISL )
@@ -4553,7 +4551,7 @@ class XNDiff
 		fprintf( outf, "%s********************\n", presp) ;
 		fprintf( outf, "%sCrystal information:\n", presp) ;
 		fprintf( outf, "%s********************\n", presp) ;
-		fprintf( outf, "%sConcentration: %lf [x100 vol%%]\n", presp, conc_cry) ;
+		fprintf( outf, "%sConcentration: %lf [x100 vol%%]\n", presp, conc_tot) ;
 		fprintf( outf, "%sSpace group symbol [HM]: %s\n", presp, symmetry_space_group_name_HM) ;
 		fprintf( outf, "%sLattice constants:     a=%10.7G [nm],    b=%10.7G [nm],     c=%10.7G [nm]\n", presp, cell_par[0], cell_par[1], cell_par[2]) ;
 		fprintf( outf, "%s                   alpha=%10.7G [ °], beta=%10.7G [ °], gamma=%10.7G [ °]\n", presp, cell_par[3], cell_par[4], cell_par[5]) ;
@@ -5593,9 +5591,9 @@ class XNDiff
  					read_rho_and_sld( &sdummy[(int)(strptr1-strptr0)], &sld_multi.NEUT_ICSD_DM_file, sld_multi.NEUT_ICSD_DM_col, &icsd_dm, 'n') ;
 					icsd_isdef[2] = true ;
 				}
-				else if ( conc_userdef && !strcmp( item, par_keyword.CONC_CRY) ) 
+				else if ( conc_userdef && !strcmp( item, par_keyword.CONC_TOT) ) 
 				{
-					/* overwrite default value for conc_cry, if conc_userdef == true */
+					/* overwrite default value for conc_tot, if conc_userdef == true */
 
 					/* vol% concentration of crystals in the nanosuspension */
 					strptr2 = strchr (strptr1, '\n') ;
@@ -5603,7 +5601,7 @@ class XNDiff
 					memmove( data, strptr1, i) ;
 					data[i] = 0 ;
 
-					conc_cry = strtod (data,NULL) ;
+					conc_tot = strtod (data,NULL) ;
 					conc_isdef[0] = true ;
 				}
 				else if ( conc_userdef && !strcmp( item, par_keyword.CONC_DM) )
@@ -7889,8 +7887,8 @@ class XNDiff
 		double *Vtot_isl ; /* total isl volume, nspsp pointer */
 		double *Vtot_osl ; /* total osl volume, nspsp pointer */
 
-		double *Vtot_dm ; /* total dm volume, nspsp pointer, derived from V_tot with conc_cry and conc_dm */
-		double *Vtot_irr ; /* total irradiated sample volume, nspsp pointer, derived from V_tot with conc_cry */
+		double *Vtot_dm ; /* total dm volume, nspsp pointer, derived from V_tot with conc_tot and conc_dm */
+		double *Vtot_irr ; /* total irradiated sample volume, nspsp pointer, derived from V_tot with conc_tot */
 
 		double *drerho_dm_osl ; /* stores r_e * ( rho_dm - rho_osl ) in [1/nm^2] */
 		double *drerho_osl_isl ; /* stores r_e * ( rho_osl - rho_isl ) in [1/nm^2] */
@@ -9183,8 +9181,8 @@ class XNDiff
 			{
 				for ( unsigned int k=0; k<par->nms; ++k)
 				{
-					VN_irr[m][k] = VN[m][k] / conc_cry ; /* [nm^3] */
-					VN_dm[m][k] = VN[m][k] * ( conc_dm / conc_cry ) ; /* [nm^3] */
+					VN_irr[m][k] = VN_osl[m][k] / conc_tot ; /* [nm^3] */
+					VN_dm[m][k] = VN_osl[m][k] * ( conc_dm / conc_tot ) ; /* [nm^3] */
 				}
 			}
 
@@ -9206,9 +9204,9 @@ class XNDiff
 				VN_isl[m][0] = ddummy2 ; /* [nm^3] */
 				VN_osl[m][0] = ddummy3 ; /* [nm^3] */
 
-				VN_dm[m][0] = ddummy1 * ( conc_dm / conc_cry ) ; /* [nm^3] */
+				VN_dm[m][0] = VN_osl[m][0] * ( conc_dm / conc_tot ) ; /* [nm^3] */
 
-				VN_irr[m][0] = ddummy1 / conc_cry * sc_irr ; /* !!! [nm^2 * cm] !!! */
+				VN_irr[m][0] = VN_osl[m][0] / conc_tot * sc_irr ; /* !!! [nm^2 * cm] !!! */
 			}
 
 			/*****************************************/
@@ -9236,12 +9234,12 @@ class XNDiff
 				Vtot_osl[m] += VN_osl[m][0] ; /* [nm^3] */
 			}
 
-			/* finally update also Vtot_dm and Vtot_irr with conc_dm and conc_cry (both in vol%) */
+			/* finally update also Vtot_dm and Vtot_irr with conc_dm and conc_tot (both in vol%) */
 			/* Vtot_irr important for both, X/n for absolute units, Vtot_dm only for neutron incoherent scattering */
 			for ( unsigned int m=0; m<nspsp; ++m)
 			{
-				Vtot_irr[m] = Vtot_cry[m] / conc_cry * sc_irr ; /* !!! [nm^2 * cm] !!! */
-				Vtot_dm[m] = Vtot_cry[m] * ( conc_dm / conc_cry ) ; /* [nm^3] */
+				Vtot_irr[m] = Vtot_osl[m] / conc_tot * sc_irr ; /* !!! [nm^2 * cm] !!! */
+				Vtot_dm[m] = Vtot_osl[m] * ( conc_dm / conc_tot ) ; /* [nm^3] */
 			}
 
 
@@ -11305,7 +11303,7 @@ class XNDiff
 		/* default concentrations */
 		conc_userdef = false ;
 		conc_dm = 1.0 ;
-		conc_cry = 0.01 ;
+		conc_tot = 0.01 ;
 
 		/* -mem -time flags */
 		#ifdef __FreeBSD__
@@ -11983,7 +11981,7 @@ class XNDiff
 									   -thicknesses d_isl d_osl  must be always provided
 									   -if -X option only <rho> = < rho_isl rho_osl rho_dm > must be provided
 									   -if -n option only <sld> = < sld_isl sld_osl sld_dm > and <icsd> = < icsd_isl icsd_osl icsd_dm > must be provided
-									   -if -conc par option also <conc> = < conc_cry conc_dm > must be provided 
+									   -if -conc par option also <conc> = < conc_tot conc_dm > must be provided 
 									   e.g. X+n (default or -X -n), userdefined conc via -conc par
 									       +par < d_isl d_osl <rho> <sld> <icsd> <conc> >
 									   e.g. X only (-X), default concentration (default or via -conc def)
@@ -12071,7 +12069,7 @@ class XNDiff
 										if ( conc_userdef )
 										{
 											fprintf( outf, "\n# concentration of dispersion medium and crystals in the nanosuspension [vol%%]\n") ;
-											write_par_entry( outf, carg, varg, par_keyword.CONC_CRY, i, false) ;
+											write_par_entry( outf, carg, varg, par_keyword.CONC_TOT, i, false) ;
 											write_par_entry( outf, carg, varg, par_keyword.CONC_DM, i, false) ;
 										}
 									}
@@ -12557,7 +12555,7 @@ class XNDiff
 			"stackcpp-function: Missing entry ICSD_SLD_INLAY in par-file.", /* 057 */
 			"stackcpp-function: Missing entry ICSD_SLD_OUTLAY in par-file.", /* 058 */
 			"stackcpp-function: Missing entry ICSD_SLD_DM in par-file.", /* 059 */
-			"stackcpp-function: Missing entry CONC_CRY in par-file.", /* 060 */
+			"stackcpp-function: Missing entry CONC_TOT in par-file.", /* 060 */
 			"stackcpp-function: Missing entry CONC_DM in par-file.", /* 061 */
 			"stackcpp-function: Argument for -init_n_rand flag must be a negative integer.", /* 062 */
 			"stackcpp-function: Argument for -init_d_rand and -init_MTRand flag must be an unsigned integer.", /* 063 */
