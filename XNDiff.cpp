@@ -704,10 +704,7 @@ class XNDiff
 	   ( V_ISL - V_CRY )
 	   and 
 	   ( V_OSL - V_ISL )
-	   correspond to volumes of stabilizer layer covering the parallelepipedal particles. Ideally they should be also related to the concentration of the 
-	   stabilizer layer (e.g. phospholipid + sodium glycocholate etc ). However they must not, cause the stabilizer layer must not be densely packed and dispersion
-	   medium and crystal substance may contribute. Their contributions might be later estimated by the rho/sld and from the difference between the expected volume
-	   concentration of the stabilizer (sample composition) and the one from the simulation/fit.
+	   correspond to volumes of stabilizer layer covering the parallelepipedal particles. Ideally they should be also related to the concentration of the stabilizer layer (e.g. phospholipid + sodium glycocholate etc ). However they must not, cause the stabilizer layer must not be densely packed and dispersion medium and crystal substance may contribute. Their contributions might be later estimated by the rho/sld and from the difference between the expected volume concentration of the stabilizer (sample composition) and the one from the simulation/fit.
 	
 	*/
 	void test_I_at_s_equal_zero()
@@ -10828,8 +10825,8 @@ class XNDiff
 			if ( ( ( c_rep + 1 ) == par->nr ) || convergence_flag )
 			{
 				/* Write S to files at the end of the repeats. 
-				   If the repeats are extended the files will be overwritten
-				   and MULTIPLICITY will be increased */
+				   If the repeats are extended the files will be overwritten 
+				*/
 
 				for ( unsigned int m=0; m<nspsp; ++m)
 				{
