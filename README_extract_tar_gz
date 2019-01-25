@@ -1,7 +1,7 @@
 Examples:
-cat SSS_180x360_P*_ST_360_400_N100.tar.gz | tar -zxvf - -C /home/martins/projects/BatchMultiFit_SF/out/ --wildcards "SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat" -i
+cat SSS_180x360_P*_ST_360_400_N100.tar.gz | tar -zxvf - -C /home/martins/projects/BatchMultiFit_SF/out/ --wildcards "SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat" "SSS_180x360_P*_ST_360_400_N100.log" -i
 
-for file in SSS_180x360_P10_*.tar.gz ; do tar -xzvf SSS_180x360_P10_20_ST_360_400_N100.tar.gz -C targetdir/ --wildcards SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat ; done
+for file in SSS_180x360_P10_*.tar.gz ; do tar -xzvf SSS_180x360_P10_20_ST_360_400_N100.tar.gz -C targetdir/ --wildcards "SSS_180x360_P*_ST_360_400_N100_Y_X_sp_*.dat" "SSS_180x360_P*_ST_360_400_N100.log" ; done
 
 
 Note that order of args in tar is important:
