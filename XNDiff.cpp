@@ -8877,6 +8877,14 @@ class XNDiff
 						/* include also both soft stabilizer layer */
 						D[k] = DMIN + 2.0 * ( thickness_isl + thickness_osl ) ;
 					}
+					else if ( par->stackmode == 4 )
+					{
+						/* if DMIN + both soft stabilizer layers >  D[k] -> D[k] = DMIN */
+						/* reasonable if difference btw max(DMIN) ~ <D[k]> but not max(DMIN) >> <D[k]> */
+						DMIN += 2.0 * ( thickness_isl + thickness_osl ) ;
+						while ((D[k] = n_rand (par->td1, par->D1, par->D2)) < 0.0 ) ;
+						if ( DMIN > D[k] ) { D[k] = DMIN ; } 
+					}
 
 					d1[k] = n_rand (par->td1, par->d11, par->d12) ;
 					d2[k] = n_rand (par->td1, par->d21, par->d22) ;
@@ -11489,7 +11497,7 @@ class XNDiff
 											if (par->td2 < 0 || par->td2 > 2) { XNDIFF_ERROR(86) ; }
 
 											par->stackmode = (int) strtol (varg[++i], NULL, 10) ;
-											if (par->stackmode < 0 || par->stackmode > 3) { XNDIFF_ERROR(87) ; }
+											if (par->stackmode < 0 || par->stackmode > 4) { XNDIFF_ERROR(87) ; }
 
 											par->rs1 = strtod (varg[++i], NULL) ;
 											par->rs2 = strtod (varg[++i], NULL) ;
@@ -12341,7 +12349,7 @@ class XNDiff
 			"get_current_memory(): error in reading the output of bash-script memory_<OS>_<PID>.sh.", /* 074 */
 			"Could not open syminfo.lib.", /* 075 */
 			"Error in formula interpreter, incomplete expression.", /* 076 */
-			"+par : Too much arguments", /* 077 */
+			"+par : Too much arguments.", /* 077 */
 			"Essential paramters are missing in the input arguments list.", /* 078 */
 			"Error in read_single_numeric_data_from_cfe(). The data type is not numeric.", /* 079 */
 			"Error in read_single_text_data_from_cfe(). The data type is not text.", /* 080 */
@@ -12349,9 +12357,9 @@ class XNDiff
 			"test_XnEquiv works only for Xn=0 (X-ray AND neutron scattering).", /* 082 */
 			"test_XnEquiv should not be applied for multiple rho/sld/icsd's.", /* 083 */
 			"Expected \"symop\" clause in symop-file.", /* 084 */
-			"Type of distribution for td1 must be either 0,1 ", /* 085 */
-			"Type of distribution for td2 must be either 0,1,2 ", /* 086 */
-			"Type of stack mode must be either 0,1,2,3 " /* 087 */
+			"Type of distribution for td1 must be either 0,1.", /* 085 */
+			"Type of distribution for td2 must be either 0,1,2.", /* 086 */
+			"Stack mode must be between 0-4." /* 087 */
 		} ;
 
 		/* before exit, write and close the logfile */
