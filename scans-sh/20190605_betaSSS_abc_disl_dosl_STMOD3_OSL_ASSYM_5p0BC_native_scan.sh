@@ -98,7 +98,7 @@ dosl_str2=$(echo $dosl_str2 | sed 's#\.##g')
 #dR_str2=$(echo $dR_str | sed 's/\.//g')
 
 
-jobname="SSS_180x360_P${disl_str2}_${dosl_str2}_STMOD3_OSL_ASSYM_5p0BC_native"
+jobname="SSS_180x360_P${disl_str2}_${dosl_str2}_STMOD3_N50_OSL_ASSYM_5p0BC_native"
 echo $jobname
 
 
