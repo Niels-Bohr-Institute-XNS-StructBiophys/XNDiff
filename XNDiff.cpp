@@ -7987,6 +7987,7 @@ class XNDiff
 			for( unsigned int i=0; i<par->nsp; ++i) { nis_arr[i] = nis[i] ; }
 
 			if ( log_flag )
+			{
 				fprintf( logfile, "\tnis = ( ") ;
 				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", nis_arr[i]) ; }
 				fprintf( logfile, " %.3lf)\n", nis_arr[par->nsp-1]) ;
