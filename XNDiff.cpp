@@ -387,7 +387,9 @@ class XNDiff
 	unsigned int num_cenop; /* amount of center operations */
 
 	vector<double> cis ; /* c_i's fitted from diluted systems (\sum_i c_i will be normalized to 1 after read in) */
-	vector<double> nis ; /* n_i = (c_i/i)/[\sum_i(c_i/i)] */
+	vector<double> nis ; /* n_i = (c_i/i)/[\sum_i(c_i/i)] in case cis are provided, else if nis provided normaliyed to 1 */
+	bool cis_isdef ;
+	bool nis_isdef ;
 
 	vector< vector<unsigned int> > bond_site12 ; /* connectivity table derived from cif-file */
 	vector< vector<string> > bond_symmetry12 ;
@@ -7946,40 +7948,52 @@ class XNDiff
 				gsl_rng_set( GSL_RNG, init_d_rand ) ;
 			}
 
-			if ( log_flag )
-			{
-				fprintf( logfile, "\tcis = ( ") ;
-				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
-				fprintf( logfile, " %.3lf)\n", cis[par->nsp-1]) ;
-			}
+			// if cis provided, normalize cis to 1 and compute nis
+			// here we use the approach n_i -> c_i / i, which is strictly only true if disl=dosl=0
+			// it might be worth to implement n_i -> c_i / ( i * dhkl + 2 * (disl+dosl) ) to account for platelet volumes includinmg the stabilzer shells, since the cis are related to VOSL in case of VOSL normalization
+			if( cis_isdef )
+			{ 
+				if ( log_flag )
+				{
+					fprintf( logfile, "\tcis = ( ") ;
+					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
+					fprintf( logfile, " %.3lf)\n", cis[par->nsp-1]) ;
+				}
 			
-			/* normalize cis, and create normalized nis */
-			ddummy1 = 0.0 ;
-			for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += cis[i] ; }
-			for( unsigned int i=0; i<par->nsp; ++i) { cis[i] /= ddummy1 ; }
+				/* normalize cis to 1 */
+				ddummy1 = 0.0 ;
+				for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += cis[i] ; }
+				for( unsigned int i=0; i<par->nsp; ++i) { cis[i] /= ddummy1 ; }
 
-			nis = cis ;
-			for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= (double)(i+1) ; }
+				if ( log_flag )
+				{
+					fprintf( logfile, "\tcis = ( ") ;
+					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
+					fprintf( logfile, " %.3lf) (normalized to 1)\n", cis[par->nsp-1]) ;
+				}
 
+				/* calculate unnormalized nis from cis */
+				nis = cis ;
+				for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= (double)(i+1) ; }
+			}
+
+			/* normalized nis to 1 */ 
 			ddummy1 = 0.0 ;
 			for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += nis[i] ; }
 			for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= ddummy1 ; }
 
+			// assign nis to nis_arr, print nis_arr
 			nis_arr = (double*) calloc( par->nsp, sizeof(double)) ;
 			for( unsigned int i=0; i<par->nsp; ++i) { nis_arr[i] = nis[i] ; }
 
 			if ( log_flag )
-			{
-				fprintf( logfile, "\tcis = ( ") ;
-				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
-				fprintf( logfile, " %.3lf) (normalized to 1)\n", cis[par->nsp-1]) ;
-
 				fprintf( logfile, "\tnis = ( ") ;
 				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", nis_arr[i]) ; }
 				fprintf( logfile, " %.3lf)\n", nis_arr[par->nsp-1]) ;
 				fprintf( logfile, "done\n\n") ; 
 				fflush( logfile ) ;
 			}
+
 
 			/* now setup discrete PRNG for numbers 0...par->nsp-1 with weight according to nis */
 			d_rand = gsl_ran_discrete_preproc( par->nsp, nis_arr) ;
@@ -11128,7 +11142,9 @@ class XNDiff
 		bool func_isdef = false ;
 		bool mfname_isdef = false ;
 		bool par_isdef = false ;
-		bool cis_isdef = false ;
+
+		cis_isdef = false ;
+		nis_isdef = false ;
 
 		/* function */
 		bool func_found = false ;
@@ -11684,6 +11700,43 @@ class XNDiff
 								nlock = true ;
 							}
 						}
+						else if ( !strcmp(varg[i], "-nis") )
+						{
+							/* read the n_i's if par->td==2 directly from the command line or row by row from an ascii file
+							   e.g. -nis 0.2 0.4 0.3 0.1 0.05
+							   e.g. -nis PPP_180x360_P02_02_ST600_100_N100.nis
+							*/
+							/* text or numbers */
+							if ( ++i<carg )
+							{
+								if ( is_numeric(varg[i]) )
+								{
+									while ( i < carg )
+									{
+										if ( is_numeric(varg[i]) ) { nis.push_back( strtod( varg[i], NULL) ) ; ++i ; }
+										else { break ; }
+									}
+									--i ;
+									nis_isdef = true ;
+								}
+								else
+								{
+									/* filename or flags */
+									if ( *varg[i] != '-' && *varg[i] != '+')
+									{
+										/* read nis from file */
+										read_column_from_ascii_file( string(varg[i]), ' ', 1, nis) ;
+										nis_isdef = true ;
+									}
+									else
+									{
+										/* nis_isdef = false ; */
+										break ;
+									}
+								}
+							}
+							else { XNDIFF_ERROR(1) ; }
+						}
 						else { XNDIFF_ERROR(3) ; }
 						break ;
 					/* +o -orav -ofo -ow -openmp */
@@ -12080,11 +12133,15 @@ class XNDiff
 		/* check if all essential parameters (+...) are defined and look for incompatibilities in the input (options), incompatibilities check not yet implemented !!! */
 		if ( !av_isdef || !cif_isdef || !func_isdef || !mfname_isdef || !par_isdef ) { XNDIFF_ERROR(78) ; }
 
-		/* check for consistency with cis when par->td2 = 2 */
+		/* check for consistency with cis and nis when par->td2 = 2 */
 		if ( par->td2 == 2 )
 		{
-			if ( cis_isdef == false ) { XNDIFF_ERROR(12) ; } 
-			if ( cis.size() != par->nsp ) { XNDIFF_ERROR(41) ; }
+			// either -nis or -cis must be provided 
+			if ( cis_isdef == nis_isdef ) { XNDIFF_ERROR(12) ; }
+
+			// check length
+			if ( cis_isdef == true && cis.size() != par->nsp ) { XNDIFF_ERROR(41) ; }
+			if ( nis_isdef == true && nis.size() != par->nsp ) { XNDIFF_ERROR(41) ; }
 		}
 
 		if ( silent_flag ) 
@@ -12284,7 +12341,7 @@ class XNDiff
 			"Stack-function: Syntax error in structure data file",     /* 009 */
 			"Stack-function: Vector G is zero",                        /* 010 */
 			"Stack-function: Vector Gs is zero",                       /* 011 */
-			"Missing input option -cis when using td2=2", /* 012 */
+			"For td=2 either -cis or -nis must be provided",           /* 012 */
 			"Unable to open log file in cwd ",                         /* 013 */
 			"Stack-function: Unable to open output file",              /* 014 */
 			"Stack-function: Overlap of crystals occurs continuously", /* 015 */
@@ -12313,7 +12370,7 @@ class XNDiff
 			"stackcpp-function: Could not open rho/sld_multi file", /* 038 */
 			"stackcpp-function: Missing column in rho/sld_multi file", /* 039 */
 			"stackcpp-function: B_name=NULL or/and B=NULL in write_header_in_file()", /* 040 */
-			"Length of cis must be the same as nsp for td2=2", /* 041 */
+			"Length of cis or nis must be the same as nsp for td2=2", /* 041 */
 			"stackcpp-function: B_name=NULL or/and B=NULL in write_Y()", /* 042 */
 			"stackcpp-function: Could not create input folder (ifo)", /* 043 */
 			"stackcpp-function: Could not create output folder (ofo)", /* 044 */
