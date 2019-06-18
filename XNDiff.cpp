@@ -8141,7 +8141,6 @@ class XNDiff
 			if ( log_flag ) { fprintf( logfile, "done\n\n") ; fflush (logfile) ; }
 		}
 
-
 		/* test_XnEquiv() */
 		if ( test_XnEquiv_flag ) { test_XnEquiv() ; }
 
