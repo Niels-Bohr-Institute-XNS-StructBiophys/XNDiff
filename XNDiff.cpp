@@ -9127,7 +9127,7 @@ class XNDiff
 				ol1 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[3]) ;
 				ol2 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[4]) ;
 				ol3 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[5]) ;
-	
+
 				okf1[k] = 1.0 + 2.0 * ol1 / (double)( n1[k] ) / betrag(v1[k]) ;
 				okf2[k] = 1.0 + 2.0 * ol2 / (double)( n2[k] ) / betrag(v2[k]) ;
 
