@@ -7772,7 +7772,10 @@ class XNDiff
 		char oname[1024]; /* names for output files */
 
 		double ddummy1, ddummy2, ddummy3, ddummy4, ddummy5 ;
-		double sinav_pc = 0.0, cosav_pc = 0.0, sinav_ac = 0.0, cosav_ac = 0.0 ;
+		double sinav_pc = 0.0 ;
+		double cosav_pc = 0.0 ;
+		double sinav_ac = 0.0 ;
+		double cosav_ac = 0.0 ;
 
 		const gsl_rng_type* GSL_RNG_T ;
 		gsl_rng* GSL_RNG ;
@@ -7835,10 +7838,16 @@ class XNDiff
 		dcmplx **P_isl ;				/* par->nsp x par->nms, pointer for crystal+isl term V_isl * sc_rho/sld * "cdummy" */
 		dcmplx **P_osl ;				/* par->nsp x par->nms, pointer for crystal+isl+osl term V_osl * sc_rho/sld * "cdummy" */
 
-		dcmplx cdummy11, cdummy12, cdummy13 ;		/* Complex dummy variables */
+								/* cdummy<x>1 -> Posl, cdummy<x>2 -> Pisl, cdummy<x>3 -> P */ 
+		dcmplx cdummy11, cdummy12, cdummy13 ;		/* Complex dummy variables, cdummy11 ~ Posl, cdummy12 ~ Pisl, cdummy13 ~ P */
 		dcmplx cdummy21, cdummy22, cdummy23 ;		/* Complex dummy variables */
 		dcmplx cdummy31, cdummy32, cdummy33 ;		/* Complex dummy variables */
 		dcmplx *cdummy41, *cdummy42, *cdummy43;		/* Complex dummy variables */
+								/* for phase factors for shifting the shell parallelepipeds from origin */
+		dcmplx cdummy51, cdummy52, cdummy53 ;		/* Complex dummy variables */
+		dcmplx cdummy61, cdummy62, cdummy63 ;		/* Complex dummy variables */
+		dcmplx *cdummy71, *cdummy72, *cdummy73;		/* Complex dummy variables */
+
 		dcmplx FFF_cdummy ;				/* Complex dummy variables */
 
 		double l1, l2, l3 ;				/* variables for calculations of dispersion medium and stabilizer scattering */
@@ -9363,11 +9372,10 @@ class XNDiff
 			   Outer parallel loop variable must not be declared private, but nested (inner) loop counters have to be declared private in C(++) !!!
 			   Similar settings are applied in compute_structure_amplitude().
 			*/
-			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread) shared( dS_X, dS_n, dYc_X, dYc_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
+			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, cdummy51, cdummy52, cdummy53, cdummy61, cdummy62, cdummy63, cdummy71, cdummy72, cdummy73, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread) shared( dS_X, dS_n, dYc_X, dYc_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
 			{
 				/* prepare parallel region, allocate dynamic arrays that should be used as private variables
-				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				   Note that variables allocated/defined within a parallel section are by default private.
 				   dE_X/n and related variables are private for each thread, their data will be written to newly introduced private dummy arrays like
 				   dS_X/n_parallel_thread, dYc_X/n_parallel_thread and related ones. They will be at the end written to dS_X/n, dYc_X/n etc.
@@ -9411,9 +9419,14 @@ class XNDiff
 				exp_N3Qv3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				exp_N3Qw3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				exp_N3Qwt3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+
 				cdummy41 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				cdummy42 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				cdummy43 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+
+				cdummy71 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+				cdummy72 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+				cdummy73 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 
 				exp_RQ = (dcmplx *) calloc( par->nms, sizeof(dcmplx)) ;
 
@@ -9486,7 +9499,7 @@ class XNDiff
 				#pragma omp for schedule(static)
 				for ( kk=0; kk<nav_ac; ++kk)
 				{
-					/* GA, P_osl, P_isl, P, cdummy41, cdummy42, cdummy43, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, dE_X, dE_n will be overwritten */
+					/* GA, P_osl, P_isl, P, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, dE_X, dE_n will be overwritten */
 					/* dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread will be updated (+=) within each thread and finally written to the corresponding variables */
 
 					/* reset variables to 0.0 */
@@ -9535,9 +9548,14 @@ class XNDiff
 // 						exp_N3Qv3[mm] = dcmplx( 0.0, 0.0) ;
 // 						exp_N3Qw3[mm] = dcmplx( 0.0, 0.0) ;
 // 						exp_N3Qwt3[mm] = dcmplx( 0.0, 0.0) ;
+//
 // 						cdummy41[mm] = dcmplx( 0.0, 0.0) ;
 // 						cdummy42[mm] = dcmplx( 0.0, 0.0) ;
 // 						cdummy43[mm] = dcmplx( 0.0, 0.0) ;
+//
+// 						cdummy71[mm] = dcmplx( 0.0, 0.0) ;
+// 						cdummy72[mm] = dcmplx( 0.0, 0.0) ;
+// 						cdummy73[mm] = dcmplx( 0.0, 0.0) ;
 // 					}
 // 
 // 					for ( pp=0; pp<par->nms; ++pp) 
@@ -9706,7 +9724,7 @@ class XNDiff
 									/* w_j = kf_j * v_j */
 									exp_N3Qw3[mm] = exp ( dcmplx( 0.0, 2.0 * piQw3 * (double)(mm+1) ) ) - 1.0 ;
 									/* wt_j = okf_j * v_j */
-									exp_N3Qwt3[mm] = exp ( dcmplx( 0.0, 2.0 * piQwt3 * (double)(mm+1)  ) ) - 1.0 ;
+									exp_N3Qwt3[mm] = exp ( dcmplx( 0.0, 2.0 * piQwt3 * (double)(mm+1) ) ) - 1.0 ;
 
 									if (fabs(piQwt3) > 1e-10) { cdummy41[mm] = exp_N3Qwt3[mm] / ( dcmplx( 0.0, 2.0 * piQwt3) ) ; }
 									else { cdummy41[mm] = dcmplx( (double)(mm+1), 0.0) ; }
@@ -9716,6 +9734,14 @@ class XNDiff
 
 									if (fabs(piQv3) > 1e-10) { cdummy43[mm] = exp_N3Qv3[mm] / ( dcmplx( 0.0, 2.0 * piQv3) ); }
 									else { cdummy43[mm] = dcmplx( (double)(mm+1), 0.0) ; }
+
+
+									/* for parallelepiped shifts */
+									/* wt_j = okf_j * v_j */
+									cdummy71[mm] = exp ( dcmplx( 0.0, ( piQv3 - piQwt3 ) * (double)(mm+1) ) ) ;
+									/* w_j = kf_j * v_j */
+									cdummy72[mm] = exp ( dcmplx( 0.0, ( piQv3 - piQw3 ) * (double)(mm+1) ) ) ;
+									cdummy73[mm] = dcmplx( 1.0, 0.0 ) ;
 								}
 
 								/* over all par->nms N1,N2 configurations */
@@ -9764,6 +9790,7 @@ class XNDiff
 									exp_N1Qwt1 = exp ( dcmplx( 0.0, 2.0 * piQwt1 * (double)n1[pp] ) ) - 1.0 ;
 									exp_N2Qwt2 = exp ( dcmplx( 0.0, 2.0 * piQwt2 * (double)n2[pp] ) ) - 1.0 ;
 
+
 									/* for GA */
 									GA_N1_N2 = dcmplx( 1.0, 0.0) ;
 
@@ -9795,6 +9822,22 @@ class XNDiff
 									else { cdummy33 = dcmplx( ( (double)n2[pp]), 0.0) ; }
 
 
+
+									/* for parallelepiped shifts, use -1.0 for w and wt */
+
+									/* wt_j = okf_j * v_j */
+									cdummy51 = exp ( dcmplx( 0.0, ( piQv1 - piQwt1 ) * (double)n1[pp] ) ) ;
+									cdummy61 = exp ( dcmplx( 0.0, ( piQv2 - piQwt2 ) * (double)n2[pp] ) ) ;
+
+									/* w_j = kf_j * v_j */
+									cdummy52 = exp ( dcmplx( 0.0, ( piQv1 - piQw1 ) * (double)n1[pp] ) ) ;
+									cdummy62 = exp ( dcmplx( 0.0, ( piQv2 - piQw2 ) * (double)n2[pp] ) ) ;
+
+									cdummy53 = dcmplx( 1.0, 0.0 ) ;
+									cdummy63 = dcmplx( 1.0, 0.0 ) ;
+
+
+
 									/* compute scattering contribution for all single nanoparticles with n3 ~ m + 1 = 1...nsp */
 									/* save in dE[mm][pp] and add |dE[mm][pp]|^2 to dS[ii][mm][pp] and S[ii][mm] */
 									for ( mm=0; mm<par->nsp; ++mm)
@@ -9821,9 +9864,9 @@ class XNDiff
 										/* S_D^k=S^{k''}(rho_dm-rho_osl) + S^{k'}(rho_osl-rho_isl) + S^{k}(rho_isl) */
 										/* compute in 3 steps Bg=S_D^k */
 
-										cdummy11 = cdummy21 * cdummy31 * cdummy41[mm] ;
-										cdummy12 = cdummy22 * cdummy32 * cdummy42[mm] ;
-										cdummy13 = cdummy23 * cdummy33 * cdummy43[mm] ;
+										cdummy11 = cdummy21 * cdummy31 * cdummy41[mm] * cdummy51 * cdummy61 * cdummy71[mm] ;
+										cdummy12 = cdummy22 * cdummy32 * cdummy42[mm] * cdummy52 * cdummy62 * cdummy72[mm] ;
+										cdummy13 = cdummy23 * cdummy33 * cdummy43[mm] * cdummy53 * cdummy63 * cdummy73[mm] ;
 
 										P_osl[mm][pp] = cdummy11 * ((dcmplx) V_osl[mm][pp]) ; /* [nm^3] */
 										P_isl[mm][pp] = cdummy12 * ((dcmplx) V_isl[mm][pp]) ;
@@ -9992,6 +10035,24 @@ class XNDiff
 									if (fabs(piQv2) > 1e-10) { cdummy33 = exp_N2Qv2 / ( dcmplx( 0.0, 2.0 * piQv2) ) ; }
 									else { cdummy33 = dcmplx( ( (double)n2[pp]), 0.0) ; }
 
+
+
+									/* for parallelepiped shifts, use -1.0 for w and wt */
+
+									/* wt_j = okf_j * v_j */
+									cdummy51 = exp ( dcmplx( 0.0, ( piQv1 - piQwt1 ) * (double)n1[pp] ) ) ;
+									cdummy61 = exp ( dcmplx( 0.0, ( piQv2 - piQwt2 ) * (double)n2[pp] ) ) ;
+
+									/* w_j = kf_j * v_j */
+									cdummy52 = exp ( dcmplx( 0.0, ( piQv1 - piQw1 ) * (double)n1[pp] ) ) ;
+									cdummy62 = exp ( dcmplx( 0.0, ( piQv2 - piQw2 ) * (double)n2[pp] ) ) ;
+
+									cdummy53 = dcmplx( 1.0, 0.0 ) ;
+									cdummy63 = dcmplx( 1.0, 0.0 ) ;
+
+
+
+
 									/* compute scattering contribution for all single nanoparticles with n3 ~ m = 1 ... par->nsp */
 									/* save in dE[mm] and add |dE[mm]|^2 to S[ii][mm] */
 									for ( mm=0; mm<par->nsp; ++mm)
@@ -10021,9 +10082,20 @@ class XNDiff
 										if (fabs(piQv3) > 1e-10) { cdummy43[0] = exp_N3Qv3[0] / ( dcmplx( 0.0, 2.0 * piQv3) ) ; }
 										else { cdummy43[0] = dcmplx( (double)(mm+1), 0.0) ; }
 
-										cdummy11 = cdummy21 * cdummy31 * cdummy41[0] ;
-										cdummy12 = cdummy22 * cdummy32 * cdummy42[0] ;
-										cdummy13 = cdummy23 * cdummy33 * cdummy43[0] ;
+
+
+										/* for parallelepiped shifts */
+										/* wt_j = okf_j * v_j */
+										cdummy71[0] = exp ( dcmplx( 0.0, ( piQv3 - piQwt3 ) * (double)(mm+1) ) ) ;
+										/* w_j = kf_j * v_j */
+										cdummy72[0] = exp ( dcmplx( 0.0, ( piQv3 - piQw3 ) * (double)(mm+1) ) ) ;
+										cdummy73[0] = dcmplx( 1.0, 0.0 ) ;
+
+
+
+										cdummy11 = cdummy21 * cdummy31 * cdummy41[0] * cdummy51 * cdummy61 * cdummy71[0] ;
+										cdummy12 = cdummy22 * cdummy32 * cdummy42[0] * cdummy52 * cdummy62 * cdummy72[0] ;
+										cdummy13 = cdummy23 * cdummy33 * cdummy43[0] * cdummy53 * cdummy63 * cdummy73[0] ;
 
 										P_osl[mm][pp] = cdummy11 * ((dcmplx) V_osl[mm][pp]) ; /* [nm^3] */
 										P_isl[mm][pp] = cdummy12 * ((dcmplx) V_isl[mm][pp]) ;
@@ -10100,7 +10172,12 @@ class XNDiff
 							} /* if av_mode == 0,2,3 or 1 */
 
 
+
+
+
 							/* compute scattering contribution for the randomly chosen stacks */
+
+
 
 
 							/* Actually there's no need for exp_RQ[0], computation might be omitted */
@@ -10390,8 +10467,7 @@ class XNDiff
 
 
 				/* free dynamic arrays allocated within the parallel region
-				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				*/
 				for ( mm=0; mm<par->nsp; ++mm)
 				{
@@ -10428,9 +10504,14 @@ class XNDiff
 				free(exp_N3Qv3) ;
 				free(exp_N3Qw3) ;
 				free(exp_N3Qwt3) ;
+
 				free(cdummy41) ;
 				free(cdummy42) ;
 				free(cdummy43) ;
+
+				free(cdummy71) ;
+				free(cdummy72) ;
+				free(cdummy73) ;
 
 				free(exp_RQ) ;
 
@@ -11039,8 +11120,7 @@ class XNDiff
 		free(MULTIPLICITY) ;
 
 		/* the following arrays have been already deallocated within the parallel region
-		   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-		   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+		   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 		*/
 
 		/* free S_X/n (nspsp x rho/sld_multi.n x np ), 
