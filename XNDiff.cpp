@@ -9172,7 +9172,14 @@ class XNDiff
 					fprintf( logfile, "%s            wt1=(%15.10G, %15.10G, %15.10G)\n", "\t", wt1[k][0], wt1[k][1], wt1[k][2]) ;
 					fprintf( logfile, "%s            wt2=(%15.10G, %15.10G, %15.10G)\n", "\t", wt2[k][0], wt2[k][1], wt2[k][2]) ;
 					fprintf( logfile, "%s            wt3=(%15.10G, %15.10G, %15.10G)\n", "\t", wt3[n3[k]-1][k][0], wt3[n3[k]-1][k][1], wt3[n3[k]-1][k][2]) ;
+					/* shift vectors for osl and isl parallelepiped */
+					fprintf( logfile, "%s            da_isl=(%15.10G, %15.10G, %15.10G)\n", "\t", 0.5 * ( n1[k] * ( v1[k][0] - w1[k][0] ) + n2[k] * ( v2[k][0] - w2[k][0] ) + n3[k] * ( v3[k][0] - w3[n3[k]-1][k][0] ) ), 0.5 * ( n1[k] * ( v1[k][1] - w1[k][1] ) + n2[k] * ( v2[k][1] - w2[k][1] ) + n3[k] * ( v3[k][1] - w3[n3[k]-1][k][1] ) ), 0.5 * ( n1[k] * ( v1[k][2] - w1[k][2] ) + n2[k] * ( v2[k][2] - w2[k][2] ) + n3[k] * ( v3[k][2] - w3[n3[k]-1][k][2] ) ) ) ;
+					fprintf( logfile, "%s            da_osl=(%15.10G, %15.10G, %15.10G)\n", "\t", 0.5 * ( n1[k] * ( v1[k][0] - wt1[k][0] ) + n2[k] * ( v2[k][0] - wt2[k][0] ) + n3[k] * ( v3[k][0] - wt3[n3[k]-1][k][0] ) ), 0.5 * ( n1[k] * ( v1[k][1] - wt1[k][1] ) + n2[k] * ( v2[k][1] - wt2[k][1] ) + n3[k] * ( v3[k][1] - wt3[n3[k]-1][k][1] ) ), 0.5 * ( n1[k] * ( v1[k][2] - wt1[k][2] ) + n2[k] * ( v2[k][2] - wt2[k][2] ) + n3[k] * ( v3[k][2] - wt3[n3[k]-1][k][2] ) ) ) ;
+
+					/* shift vectors for osl and isl parallelepiped */
+
 					fflush (logfile) ;
+
 				}
 	
 			/* END SECOND.1 loop of the par->nms particles in the stack */
@@ -9864,10 +9871,24 @@ class XNDiff
 										/* S_D^k=S^{k''}(rho_dm-rho_osl) + S^{k'}(rho_osl-rho_isl) + S^{k}(rho_isl) */
 										/* compute in 3 steps Bg=S_D^k */
 
+										/* cdummy11 adds all terms incl shift phase for osl parallelepiped */
+										/* cdummy<j+1>1 = [ exp( i N<j> Qwt<j> )-1 ] / ( i Qwt<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>1 = exp( i / 2 * N<j> ( Qv<j> - Qwt<j> ) ) j=1,2,3 */
+
+										/* cdummy12 adds all terms incl shift phase for isl parallelepiped */
+										/* cdummy<j+1>2 = [ exp( i N<j> Qw<j> )-1 ] / ( i Qw<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>2 = exp( i / 2 * N<j> ( Qv<j> - Qw<j> ) ) j=1,2,3 */
+
+										/* cdummy13 adds all terms (shift phase = 1.0) for cry parallelepiped */
+										/* cdummy<j+1>3 = [ exp( i N<j> Qv<j> )-1 ] / ( i Qv<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>3 = exp( i / 2 * N<j> ( Qv<j> - Qv<j> ) ) = 1.0 j=1,2,3 */
+
 										cdummy11 = cdummy21 * cdummy31 * cdummy41[mm] * cdummy51 * cdummy61 * cdummy71[mm] ;
 										cdummy12 = cdummy22 * cdummy32 * cdummy42[mm] * cdummy52 * cdummy62 * cdummy72[mm] ;
 										cdummy13 = cdummy23 * cdummy33 * cdummy43[mm] * cdummy53 * cdummy63 * cdummy73[mm] ;
 
+										/* V_osl and V_isl are unit cell volumes for parallelepiped incl shells */
+										/* VN_isl, VN_osl = n1 * n2 * n3 * V_isl, V_osl */
 										P_osl[mm][pp] = cdummy11 * ((dcmplx) V_osl[mm][pp]) ; /* [nm^3] */
 										P_isl[mm][pp] = cdummy12 * ((dcmplx) V_isl[mm][pp]) ;
 										P[mm][pp] = cdummy13 * ((dcmplx) V[mm][pp]) ;
