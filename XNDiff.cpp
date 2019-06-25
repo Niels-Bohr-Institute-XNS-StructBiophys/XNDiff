@@ -9134,6 +9134,7 @@ class XNDiff
 				l3 = thickness_isl / sin (DR * cell_par[5]) ;
 				*/
 				/* new code, projection of extended base vectors - base vectors onto normal vectors of surfaces provides the thicknesses d_isl and d_osl */
+
 				vp( vdummy, v2[k], v3[k]) ;
 				l1 = thickness_isl / fabs ( sp( v1[k], vdummy) / betrag( v1[k] ) / betrag( vdummy ) ) ;
 				vp( vdummy, v1[k], v3[k]) ;
@@ -9174,6 +9175,7 @@ class XNDiff
 				ol3 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[5]) ;
 				*/
 				/* new code, projection of extended base vectors - base vectors onto normal vectors of surfaces provides the thicknesses d_isl and d_osl */
+
 				vp( vdummy, v2[k], v3[k]) ;
 				ol1 = ( thickness_osl + thickness_isl ) / fabs ( sp( v1[k], vdummy) / betrag( v1[k] ) / betrag( vdummy ) ) ;
 				vp( vdummy, v1[k], v3[k]) ;
