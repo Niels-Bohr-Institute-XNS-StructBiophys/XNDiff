@@ -387,7 +387,7 @@ class XNDiff
 	unsigned int num_cenop; /* amount of center operations */
 
 	vector<double> cis ; /* c_i's fitted from diluted systems (\sum_i c_i will be normalized to 1 after read in) */
-	vector<double> nis ; /* n_i = (c_i/i)/[\sum_i(c_i/i)] in case cis are provided, else if nis provided normaliyed to 1 */
+	vector<double> nis ; /* n_i's derived from cis, or provided by user, will be normalized to 1 */
 	bool cis_isdef ;
 	bool nis_isdef ;
 
@@ -537,7 +537,8 @@ class XNDiff
 
 	double a1[3], a2[3], a3[3] ; /* Lattice parameters in a Cartesian coordinate system */
 	double b1[3], b2[3], b3[3] ; /* Reciprocal unit cell vectors in kartesian coordinate system */
-	double G0[3] ; /* Reciprocal lattice unit vector parallel to (s-s0) */
+	double G0[3] ; /* Reciprocal lattice unit vector G0 = G_hkl / ||G_hkl||, parallel to (s-s0) */
+	double d_hkl ; /* 2pi / ||G_hkl|| */
 	double kg1[3], kg2[3] ; /* Two vectors in (hkl)-plane */	
 	double Gs[3] ; /* Reciprocal lattice unit vector of stacking direction */
 	double k1[3], k2[3] ; /* Two vectors in (hs ks ls)-plane */
@@ -4329,9 +4330,10 @@ class XNDiff
 		double a_st, b_st, c_st ; 
 		int noa_1, Uaniso ;
 
-		a_st = betrag(b1) ;
-		b_st = betrag(b2) ;
-		c_st = betrag(b3) ;
+		/* note that b<j> are scaled with 2pi i.e. b<i> = 2pi * eps_{ijk} a<j> x a<k> / V_uc */
+		a_st = betrag(b1) / ( 2.0 * M_PI ) ;
+		b_st = betrag(b2) / ( 2.0 * M_PI ) ;
+		c_st = betrag(b3) / ( 2.0 * M_PI ) ;
 
 		double beta[6] ;
 		double Biso ;
@@ -5648,7 +5650,7 @@ class XNDiff
 
 
 	/* calculates the lattice vectors a1,a2,a3 and reciprocal lattice vectors b1,b2,b3 as well as 
-	   the vectors G0,kg1,kg2 and Gs,k1,k2 in reciprocal space */
+	   the vectors G0,kg1,kg2 and Gs,k1,k2 in reciprocal space and d_hkl */
 	void compute_lattice_vectors()
 	{
 		double ddummy1;
@@ -5670,18 +5672,18 @@ class XNDiff
 		/* Volume of the unit cell by parallelepipedial product (determinant of |a1 a2 a3|) ) */
 		V_uc = a1[0] * (a2[1]*a3[2] - a2[2]*a3[1]) + a1[1] * (a2[2]*a3[0] - a2[0]*a3[2]) + a1[2] * (a2[0]*a3[1] - a2[1]*a3[0]) ;
 
-		/* reciprocal lattice vectors bi=1/V_uc*(bj x bk) */
-		b1[0] = (a2[1]*a3[2] - a2[2]*a3[1]) / V_uc ;
-		b1[1] = (a2[2]*a3[0] - a2[0]*a3[2]) / V_uc ;
-		b1[2] = (a2[0]*a3[1] - a2[1]*a3[0]) / V_uc ;
+		/* reciprocal lattice vectors, note that b<j> are scaled with 2pi i.e. b<i> = 2pi * eps_{ijk} a<j> x a<k> */
+		b1[0] = 2.0 * M_PI * (a2[1]*a3[2] - a2[2]*a3[1]) / V_uc ;
+		b1[1] = 2.0 * M_PI * (a2[2]*a3[0] - a2[0]*a3[2]) / V_uc ;
+		b1[2] = 2.0 * M_PI * (a2[0]*a3[1] - a2[1]*a3[0]) / V_uc ;
   
-		b2[0] = (a3[1]*a1[2] - a3[2]*a1[1]) / V_uc ;
-		b2[1] = (a3[2]*a1[0] - a3[0]*a1[2]) / V_uc ;
-		b2[2] = (a3[0]*a1[1] - a3[1]*a1[0]) / V_uc ;
+		b2[0] = 2.0 * M_PI * (a3[1]*a1[2] - a3[2]*a1[1]) / V_uc ;
+		b2[1] = 2.0 * M_PI * (a3[2]*a1[0] - a3[0]*a1[2]) / V_uc ;
+		b2[2] = 2.0 * M_PI * (a3[0]*a1[1] - a3[1]*a1[0]) / V_uc ;
   
-		b3[0] = (a1[1]*a2[2] - a1[2]*a2[1]) / V_uc ;
-		b3[1] = (a1[2]*a2[0] - a1[0]*a2[2]) / V_uc ;
-		b3[2] = (a1[0]*a2[1] - a1[1]*a2[0]) / V_uc ;
+		b3[0] = 2.0 * M_PI * (a1[1]*a2[2] - a1[2]*a2[1]) / V_uc ;
+		b3[1] = 2.0 * M_PI * (a1[2]*a2[0] - a1[0]*a2[2]) / V_uc ;
+		b3[2] = 2.0 * M_PI * (a1[0]*a2[1] - a1[1]*a2[0]) / V_uc ;
 
 		/* Calculate G0 and Gs */
 		/* where G0 is the reciprocal lattice unit vector parallel to (s-s0) ??? and */
@@ -5695,11 +5697,14 @@ class XNDiff
 		{
 			XNDIFF_ERROR(11) ;
 		}
-		/* G0=h*b1+k*b2+l*b3 */  
+		/* G_hkl = h*b1+k*b2+l*b3 and d_hkl = 2 * pi / || G_hkl || */
 		G0[0] = par->h*b1[0] + par->k*b2[0] + par->l*b3[0] ;
 		G0[1] = par->h*b1[1] + par->k*b2[1] + par->l*b3[1] ;
 		G0[2] = par->h*b1[2] + par->k*b2[2] + par->l*b3[2] ;
 		ddummy1 = betrag(G0) ;
+		d_hkl = 2.0 * M_PI / ddummy1 ;
+
+		/* G0 = G_hkl / || G_hkl || */ 
 		G0[0] /= ddummy1 ;
 		G0[1] /= ddummy1 ;
 		G0[2] /= ddummy1 ;
@@ -5716,17 +5721,19 @@ class XNDiff
 		if ( log_flag )
 		{
 			fprintf( logfile, "\tUnit cell vectors in kartesian coordinates:\n") ;
-			fprintf( logfile, "\ta1 = (%G %G %G)\n", a1[0], a1[1], a1[2]) ;
-			fprintf( logfile, "\ta2 = (%G %G %G)\n", a2[0], a2[1], a2[2]) ;
-			fprintf( logfile, "\ta3 = (%G %G %G)\n", a3[0], a3[1], a3[2]) ;
+			fprintf( logfile, "\ta1 = (%G %G %G) [nm]\n", a1[0], a1[1], a1[2]) ;
+			fprintf( logfile, "\ta2 = (%G %G %G) [nm]\n", a2[0], a2[1], a2[2]) ;
+			fprintf( logfile, "\ta3 = (%G %G %G) [nm]\n\n", a3[0], a3[1], a3[2]) ;
 			fprintf( logfile, "\tReciprocal unit cell vectors in kartesian coordinates:\n") ;
-			fprintf( logfile, "\tb1 = (%G %G %G)\n", b1[0], b1[1], b1[2]) ;
-			fprintf( logfile, "\tb2 = (%G %G %G)\n", b2[0], b2[1], b2[2]) ;
-			fprintf( logfile, "\tb3 = (%G %G %G)\n", b3[0], b3[1], b3[2]) ;
-			fprintf( logfile, "\tUnit vector in direction of scattering vector:\n") ;
+			fprintf( logfile, "\tb1 = (%G %G %G) [1/nm]\n", b1[0], b1[1], b1[2]) ;
+			fprintf( logfile, "\tb2 = (%G %G %G) [1/nm]\n", b2[0], b2[1], b2[2]) ;
+			fprintf( logfile, "\tb3 = (%G %G %G) [1/nm]\n\n", b3[0], b3[1], b3[2]) ;
+			fprintf( logfile, "\td_hkl spacing in direction of scattering vector G_hkl:\n") ;
+			fprintf( logfile, "\td_hkl = %G [nm]\n\n", d_hkl) ;
+			fprintf( logfile, "\tUnit vector G0 in direction of scattering vector G_hkl:\n") ;
 			fprintf( logfile, "\tG0 = (%G %G %G)\n", G0[0], G0[1], G0[2]) ;
-			fprintf( logfile, "\tUnit vector in stacking direction:\n") ;
-			fprintf( logfile, "\tGs = (%G %G %G)\n", Gs[0], Gs[1], Gs[2]) ;
+			fprintf( logfile, "\tUnit vector Gs in stacking direction:\n") ;
+			fprintf( logfile, "\tGs = (%G %G %G)\n\n", Gs[0], Gs[1], Gs[2]) ;
 			fflush (logfile) ;
 		}
 
@@ -5936,12 +5943,12 @@ class XNDiff
 
 		if ( log_flag )
 		{
-			fprintf( logfile, "\tVectors kg1 and kg2 perpendicular to G:\n") ;
+			fprintf( logfile, "\tUnit vectors kg1 and kg2 perpendicular to G:\n") ;
 			fprintf( logfile, "\tkg1 = (%G %G %G)\n", kg1[0], kg1[1], kg1[2]) ;
-			fprintf( logfile, "\tkg2 = (%G %G %G)\n", kg2[0], kg2[1], kg2[2]) ;
-			fprintf( logfile, "\tVectors k1 and k2 perpendicular to Gs:\n") ;
+			fprintf( logfile, "\tkg2 = (%G %G %G)\n\n", kg2[0], kg2[1], kg2[2]) ;
+			fprintf( logfile, "\tUnit vectors k1 and k2 perpendicular to Gs:\n") ;
 			fprintf( logfile, "\tk1  = (%G %G %G)\n", k1[0], k1[1], k1[2]) ;
-			fprintf( logfile, "\tk2  = (%G %G %G)\n", k2[0], k2[1], k2[2]) ;
+			fprintf( logfile, "\tk2  = (%G %G %G)\n\n", k2[0], k2[1], k2[2]) ;
 			fflush (logfile) ;
 		}
 		/* from now on k1,k2,Gs perpendicular on each other and they are unit vectors */
@@ -7772,7 +7779,10 @@ class XNDiff
 		char oname[1024]; /* names for output files */
 
 		double ddummy1, ddummy2, ddummy3, ddummy4, ddummy5 ;
-		double sinav_pc = 0.0, cosav_pc = 0.0, sinav_ac = 0.0, cosav_ac = 0.0 ;
+		double sinav_pc = 0.0 ;
+		double cosav_pc = 0.0 ;
+		double sinav_ac = 0.0 ;
+		double cosav_ac = 0.0 ;
 
 		const gsl_rng_type* GSL_RNG_T ;
 		gsl_rng* GSL_RNG ;
@@ -7835,10 +7845,16 @@ class XNDiff
 		dcmplx **P_isl ;				/* par->nsp x par->nms, pointer for crystal+isl term V_isl * sc_rho/sld * "cdummy" */
 		dcmplx **P_osl ;				/* par->nsp x par->nms, pointer for crystal+isl+osl term V_osl * sc_rho/sld * "cdummy" */
 
-		dcmplx cdummy11, cdummy12, cdummy13 ;		/* Complex dummy variables */
+								/* cdummy<x>1 -> Posl, cdummy<x>2 -> Pisl, cdummy<x>3 -> P */ 
+		dcmplx cdummy11, cdummy12, cdummy13 ;		/* Complex dummy variables, cdummy11 ~ Posl, cdummy12 ~ Pisl, cdummy13 ~ P */
 		dcmplx cdummy21, cdummy22, cdummy23 ;		/* Complex dummy variables */
 		dcmplx cdummy31, cdummy32, cdummy33 ;		/* Complex dummy variables */
 		dcmplx *cdummy41, *cdummy42, *cdummy43;		/* Complex dummy variables */
+								/* for phase factors for shifting the shell parallelepipeds from origin */
+		dcmplx cdummy51, cdummy52, cdummy53 ;		/* Complex dummy variables */
+		dcmplx cdummy61, cdummy62, cdummy63 ;		/* Complex dummy variables */
+		dcmplx *cdummy71, *cdummy72, *cdummy73;		/* Complex dummy variables */
+
 		dcmplx FFF_cdummy ;				/* Complex dummy variables */
 
 		double l1, l2, l3 ;				/* variables for calculations of dispersion medium and stabilizer scattering */
@@ -7873,6 +7889,11 @@ class XNDiff
 		double** wt1 ;         /* Unit cell vector a1 of ith crystal including total stabilizer layer */
 		double** wt2 ;         /* Unit cell vector a2 of ith crystal including total stabilizer layer */
 		double*** wt3 ;         /* Unit cell vector a3 of ith crystal including total stabilizer layer */
+
+		double da_isl[3] ; /* shift vector for the inner shell parallelepiped */
+		double da_osl[3] ; /* shift vector for the inner shell parallelepiped */
+
+		double vdummy[3] ; /* dummy real-valued spacial vector */
 
 		double** V ; 		/* V(crystal) = V_uc, unit cell of crystal [nm^3] */
 		double** V_isl ;        /* V_isl = V(crystal) + V(isl), unit cell of crystal and inner stabilizer layer [nm^3] */
@@ -7932,96 +7953,8 @@ class XNDiff
 
 		if ( time_flag > 0 ) { time(&start) ; }
 
-		if ( log_flag ) { fprintf( logfile, "Use distribution types: td1=%d, td2=%d\n", par->td1, par->td2) ; fflush (logfile) ; }
-
-		/* initialize discrete PRNG for par->td2==2 */
-		if ( par->td2 == 2 )
-		{
-			/* setup uniform PRNG */
-			gsl_rng_env_setup() ;
-			GSL_RNG_T = gsl_rng_default ;
-			GSL_RNG = gsl_rng_alloc(GSL_RNG_T) ;
-
-			if ( log_flag ) { fprintf( logfile, "Initializing d_rand PRNG (n3).\n") ; fflush (logfile) ; }
-
-			if ( !init_d_rand_userdef )
-			{
-				/* default random initialization */
-				if ( log_flag ) { fprintf( logfile, "\tRandom Number Generator Initialization with seed: %lu\n", gsl_rng_default_seed) ; fflush (logfile) ; }
-			}
-			else
-			{
-				/* use user supplied initialization number */
-				if ( log_flag ) { fprintf( logfile, "\tRandom Number Generator Initialization with user-defined seed: %lu\n", init_d_rand) ; fflush (logfile) ; }
-				gsl_rng_set( GSL_RNG, init_d_rand ) ;
-			}
-
-			// if cis provided, normalize cis to 1 and compute nis
-			// here we use the approach n_i -> c_i / i, which is strictly only true if disl=dosl=0
-			// it might be worth to implement n_i -> c_i / ( i * dhkl + 2 * (disl+dosl) ) to account for platelet volumes includinmg the stabilzer shells, since the cis are related to VOSL in case of VOSL normalization
-			if( cis_isdef )
-			{ 
-				if ( log_flag )
-				{
-					fprintf( logfile, "\tcis = ( ") ;
-					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
-					fprintf( logfile, " %.3lf)\n", cis[par->nsp-1]) ;
-				}
-			
-				/* normalize cis to 1 */
-				ddummy1 = 0.0 ;
-				for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += cis[i] ; }
-				for( unsigned int i=0; i<par->nsp; ++i) { cis[i] /= ddummy1 ; }
-
-				if ( log_flag )
-				{
-					fprintf( logfile, "\tcis = ( ") ;
-					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", cis[i]) ; }
-					fprintf( logfile, " %.3lf) (normalized to 1)\n", cis[par->nsp-1]) ;
-				}
-
-				/* calculate unnormalized nis from cis */
-				nis = cis ;
-				for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= (double)(i+1) ; }
-			}
-
-			/* normalized nis to 1 */ 
-			ddummy1 = 0.0 ;
-			for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += nis[i] ; }
-			for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= ddummy1 ; }
-
-			// assign nis to nis_arr, print nis_arr
-			nis_arr = (double*) calloc( par->nsp, sizeof(double)) ;
-			for( unsigned int i=0; i<par->nsp; ++i) { nis_arr[i] = nis[i] ; }
-
-			if ( log_flag )
-			{
-				fprintf( logfile, "\tnis = ( ") ;
-				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.3lf,", nis_arr[i]) ; }
-				fprintf( logfile, " %.3lf)\n", nis_arr[par->nsp-1]) ;
-				fprintf( logfile, "done\n\n") ; 
-				fflush( logfile ) ;
-			}
-
-			/* now setup discrete PRNG for numbers 0...par->nsp-1 with weight according to nis */
-			d_rand = gsl_ran_discrete_preproc( par->nsp, nis_arr) ;
-		}
-
-		/* initialize always n_rand PRNG, seed will be written from within n_rand */
-		if ( log_flag ) { fprintf( logfile, "Initializing n_rand PRNG (n1,n2,n3,d1,d2,D,r3)\n") ; fflush (logfile) ; }
-		if ( !init_n_rand_userdef )
-		{
-			/* random initialization using time */
-			n_rand( -1, 0.0, 0.0) ;
-		}
-		else
-		{
-			/* use user supplied initialization number */
-			n_rand( -1, 0.0, 0.0, init_n_rand) ;
-		}
-
-		/* also computes nav_pc, nav_ac, nav_r3, nav_MC and s1, ds */
-		if ( log_flag ) { fprintf( logfile, "done\n\n") ; fprintf( logfile, "Compute polar and azimuthal angles for Powder Average\n") ; fflush (logfile) ; }
+		/* compute nav_pc, nav_ac, nav_r3, nav_MC and s1, ds */
+		if ( log_flag ) { fprintf( logfile, "Compute polar and azimuthal angles for Powder Average\n") ; fflush (logfile) ; }
 		compute_pol_azi_ang() ;
 
 		if ( log_flag ) { fprintf( logfile, "done\n\n") ; fprintf( logfile, "reading element and isotope masses from file: %s\n", "atomweights.dat") ; fflush (logfile) ;}
@@ -8039,6 +7972,8 @@ class XNDiff
 		read_cif_file() ;
 		if ( log_flag ) { fprintf( logfile, "done\n\n") ; fprintf( logfile, "Compute vectors {a_i}, {b_i}, {k1, k2, Gs}, {kg1, kg2, G0} and V_uc\n") ; fflush (logfile) ;}	
 		compute_lattice_vectors() ;
+
+
 		/* compute all scalar products between the three a_j's and all unit vectors eQ */
 		if (log_flag ) { fprintf( logfile, "done\n\n") ; fprintf( logfile, "compute_eQvj()\n") ; fflush (logfile) ; }
 		if ( time_flag > 0 ) { time(&last) ; }
@@ -8120,7 +8055,103 @@ class XNDiff
 		/* read the par-file (contrasts & thicknesses for stabilizer layer and dispersion medium, ...) */
 		if ( log_flag ) { fprintf( logfile, "read_par_file() : %s\n",par_file) ; fflush (logfile) ; }
 		read_par_file() ;
-		if ( log_flag ) { fprintf( logfile, "done\n\n") ; }
+
+
+
+		/* lattice vectors and d_hkl and shell thickenesses are known from here on */
+		/* PNRG initializations */
+		if ( log_flag ) { fprintf( logfile, "done\n\n") ; fprintf( logfile, "Use distribution types: td1=%d, td2=%d\n", par->td1, par->td2) ; fflush (logfile) ; }
+
+		/* initialize discrete PRNG for par->td2==2 */
+		if ( par->td2 == 2 )
+		{
+			/* setup uniform PRNG */
+			gsl_rng_env_setup() ;
+			GSL_RNG_T = gsl_rng_default ;
+			GSL_RNG = gsl_rng_alloc(GSL_RNG_T) ;
+
+			if ( log_flag ) { fprintf( logfile, "Initializing d_rand PRNG (n3).\n") ; fflush (logfile) ; }
+
+			if ( !init_d_rand_userdef )
+			{
+				/* default random initialization */
+				if ( log_flag ) { fprintf( logfile, "\tRandom Number Generator Initialization with seed: %lu\n", gsl_rng_default_seed) ; fflush (logfile) ; }
+			}
+			else
+			{
+				/* use user supplied initialization number */
+				if ( log_flag ) { fprintf( logfile, "\tRandom Number Generator Initialization with user-defined seed: %lu\n", init_d_rand) ; fflush (logfile) ; }
+				gsl_rng_set( GSL_RNG, init_d_rand ) ;
+			}
+
+			// if cis provided, normalize cis to 1 and compute nis
+			// old approach: n_i -> c_i / i, which is strictly only true if disl=dosl=0
+			// new approach: n_i -> c_i / ( i * d_hkl + 2 * ( d_isl + d_osl ) ) to account for platelet volumes including the stabilzer shells, since the cis are related to VOSL in case of VOSL normalization
+			if( cis_isdef )
+			{ 
+				if ( log_flag )
+				{
+					fprintf( logfile, "\tcis = ( ") ;
+					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.5lf,", cis[i]) ; }
+					fprintf( logfile, " %.5lf)\n", cis[par->nsp-1]) ;
+				}
+			
+				/* normalize cis to 1 */
+				ddummy1 = 0.0 ;
+				for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += cis[i] ; }
+				for( unsigned int i=0; i<par->nsp; ++i) { cis[i] /= ddummy1 ; }
+
+				if ( log_flag )
+				{
+					fprintf( logfile, "\tcis = ( ") ;
+					for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.5lf,", cis[i]) ; }
+					fprintf( logfile, " %.5lf) (normalized to 1)\n", cis[par->nsp-1]) ;
+				}
+
+				/* calculate unnormalized nis from cis with d_hkl and dtot */
+				nis = cis ; // possible since vectors, makes a real copy !
+				for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= ( (double)(i+1) * d_hkl + 2.0 * ( thickness_isl + thickness_osl ) ) ; }
+			}
+
+			/* normalize nis to 1 */ 
+			ddummy1 = 0.0 ;
+			for( unsigned int i=0; i<par->nsp; ++i) { ddummy1 += nis[i] ; }
+			for( unsigned int i=0; i<par->nsp; ++i) { nis[i] /= ddummy1 ; }
+
+			// assign nis to nis_arr, print nis_arr
+			nis_arr = (double*) calloc( par->nsp, sizeof(double)) ;
+			for( unsigned int i=0; i<par->nsp; ++i) { nis_arr[i] = nis[i] ; }
+
+			if ( log_flag )
+			{
+				fprintf( logfile, "\tnis = ( ") ;
+				for( unsigned int i=0; i<par->nsp-1; ++i){ fprintf( logfile, " %.5lf,", nis_arr[i]) ; }
+				fprintf( logfile, " %.5lf) (normalized to 1)\n", nis_arr[par->nsp-1]) ;
+				fprintf( logfile, "done\n\n") ; 
+				fflush( logfile ) ;
+			}
+
+			/* now setup discrete PRNG for numbers 0...par->nsp-1 with weight according to nis */
+			d_rand = gsl_ran_discrete_preproc( par->nsp, nis_arr) ;
+		}
+
+		/* initialize always n_rand PRNG, seed will be written from within n_rand */
+		if ( log_flag ) { fprintf( logfile, "Initializing n_rand PRNG (n1,n2,n3,d1,d2,D,r3)\n") ; fflush (logfile) ; }
+		if ( !init_n_rand_userdef )
+		{
+			/* random initialization using time */
+			n_rand( -1, 0.0, 0.0) ;
+		}
+		else
+		{
+			/* use user supplied initialization number */
+			n_rand( -1, 0.0, 0.0, init_n_rand) ;
+		}
+
+		if ( log_flag ) { fprintf( logfile, "done\n\n") ; fflush (logfile) ; }
+
+
+
 
 		/* Similarly always compute first f0table and link the entries in atom to it via f0ind f0table will be used in :
 		   - compute_structure_amplitude(...)
@@ -9095,9 +9126,22 @@ class XNDiff
 				the stabilizer layer in direction of the a_l for l=1,2,3 */
 				/* assume that betrag(v3[k])=betrag(a3[k])=c therefore kf3,okf3 are independent on k */
 				/* THE FOLLOWING THREE COMPUTATIONS MIGTH BE PULLED OUT BEFORE THE AVERAGING */
+
+				/* old code */
+
 				l1 = thickness_isl / sin (DR * cell_par[3]) ;
 				l2 = thickness_isl / sin (DR * cell_par[4]) ;
 				l3 = thickness_isl / sin (DR * cell_par[5]) ;
+
+				/* new code, projection of extended base vectors - base vectors onto normal vectors of surfaces provides the thicknesses d_isl and d_osl */
+				/*
+				vp( vdummy, v2[k], v3[k]) ;
+				l1 = thickness_isl / fabs ( sp( v1[k], vdummy) / betrag( v1[k] ) / betrag( vdummy ) ) ;
+				vp( vdummy, v1[k], v3[k]) ;
+				l2 = thickness_isl / fabs ( sp( v2[k], vdummy) / betrag( v2[k] ) / betrag( vdummy ) ) ;
+				vp( vdummy, v1[k], v2[k]) ;
+				l3 = thickness_isl / fabs ( sp( v3[k], vdummy) / betrag( v3[k] ) / betrag( vdummy ) ) ;
+				*/
 				/* kf_l is a scaling factor with regard to a_l=betrag(v_l[k]) in nm and the number 
 				of unit cells in a_l direction, n_l, for l=1,2,3, therefore kf_l*n_l[k]*a_l=n_l[k]*a_l+2*l_l
 				describes the length of particle k and its inner stabilizer layer */
@@ -9124,10 +9168,21 @@ class XNDiff
 
 				/* 3. virtual unit cell of crystal k and the total stabilizer shell */
 				/* THE FOLLOWING THREE COMPUTATIONS MIGTH BE PULLED OUT BEFORE THE AVERAGING */
+				/* old code */
+
 				ol1 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[3]) ;
 				ol2 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[4]) ;
 				ol3 = ( thickness_osl + thickness_isl ) / sin (DR * cell_par[5]) ;
-	
+
+				/* new code, projection of extended base vectors - base vectors onto normal vectors of surfaces provides the thicknesses d_isl and d_osl */
+				/*
+				vp( vdummy, v2[k], v3[k]) ;
+				ol1 = ( thickness_osl + thickness_isl ) / fabs ( sp( v1[k], vdummy) / betrag( v1[k] ) / betrag( vdummy ) ) ;
+				vp( vdummy, v1[k], v3[k]) ;
+				ol2 = ( thickness_osl + thickness_isl ) / fabs ( sp( v2[k], vdummy) / betrag( v2[k] ) / betrag( vdummy ) ) ;
+				vp( vdummy, v1[k], v2[k]) ;
+				ol3 = ( thickness_osl + thickness_isl ) / fabs ( sp( v3[k], vdummy) / betrag( v3[k] ) / betrag( vdummy ) ) ;
+				*/
 				okf1[k] = 1.0 + 2.0 * ol1 / (double)( n1[k] ) / betrag(v1[k]) ;
 				okf2[k] = 1.0 + 2.0 * ol2 / (double)( n2[k] ) / betrag(v2[k]) ;
 
@@ -9151,18 +9206,62 @@ class XNDiff
 				if ( log_flag )
 				{
 					fprintf( logfile, "%sCrystal %3d: n1= %10d, n2=%10d, n3=%10d\n", "\t", k, n1[k], n2[k], n3[k]) ;
-					fprintf( logfile, "%s              D= %15.10G, d1= %15.10G, d2= %15.10G\n", "\t", D[k], d1[k], d2[k]) ;
-					fprintf( logfile, "%s              R=(%15.10G, %15.10G, %15.10G)\n", "\t", R[k][0], R[k][1], R[k][2]) ;					
+					fprintf( logfile, "%s             d1= %15.10G, d2= %15.10G, D= %15.10G\n", "\t", d1[k], d2[k], D[k]) ;
+					fprintf( logfile, "%s             R=(%15.10G, %15.10G, %15.10G)\n", "\t", R[k][0], R[k][1], R[k][2]) ;					
 					fprintf( logfile, "%s             r3=%15.10G\n", "\t", r3[k]) ;
+					fprintf( logfile, "\n") ;
 					fprintf( logfile, "%s             v1=(%15.10G, %15.10G, %15.10G)\n", "\t", v1[k][0], v1[k][1], v1[k][2]) ;
 					fprintf( logfile, "%s             v2=(%15.10G, %15.10G, %15.10G)\n", "\t", v2[k][0], v2[k][1], v2[k][2]) ;
 					fprintf( logfile, "%s             v3=(%15.10G, %15.10G, %15.10G)\n", "\t", v3[k][0], v3[k][1], v3[k][2]) ;
+					fprintf( logfile, "\n") ;
+					fprintf( logfile, "%s             l1=%15.10G kf1=%15.10G\n", "\t", l1, kf1[k]) ;
+					fprintf( logfile, "%s             l2=%15.10G kf2=%15.10G\n", "\t", l2, kf2[k]) ;
+					fprintf( logfile, "%s             l3=%15.10G kf3=%15.10G\n", "\t", l3, kf3[n3[k]-1]) ;
+					fprintf( logfile, "\n") ;
 					fprintf( logfile, "%s             w1=(%15.10G, %15.10G, %15.10G)\n", "\t", w1[k][0], w1[k][1], w1[k][2]) ;
 					fprintf( logfile, "%s             w2=(%15.10G, %15.10G, %15.10G)\n", "\t", w2[k][0], w2[k][1], w2[k][2]) ;
 					fprintf( logfile, "%s             w3=(%15.10G, %15.10G, %15.10G)\n", "\t", w3[n3[k]-1][k][0], w3[n3[k]-1][k][1], w3[n3[k]-1][k][2]) ;
-					fprintf( logfile, "%s            wt1=(%15.10G, %15.10G, %15.10G)\n", "\t", wt1[k][0], wt1[k][1], wt1[k][2]) ;
-					fprintf( logfile, "%s            wt2=(%15.10G, %15.10G, %15.10G)\n", "\t", wt2[k][0], wt2[k][1], wt2[k][2]) ;
-					fprintf( logfile, "%s            wt3=(%15.10G, %15.10G, %15.10G)\n", "\t", wt3[n3[k]-1][k][0], wt3[n3[k]-1][k][1], wt3[n3[k]-1][k][2]) ;
+					fprintf( logfile, "\n") ;
+					fprintf( logfile, "%s             ol1=%15.10G okf1=%15.10G\n", "\t", ol1, okf1[k]) ;
+					fprintf( logfile, "%s             ol2=%15.10G okf2=%15.10G\n", "\t", ol2, okf2[k]) ;
+					fprintf( logfile, "%s             ol3=%15.10G okf3=%15.10G\n", "\t", ol3, okf3[n3[k]-1]) ;
+					fprintf( logfile, "\n") ;
+					fprintf( logfile, "%s             wt1=(%15.10G, %15.10G, %15.10G)\n", "\t", wt1[k][0], wt1[k][1], wt1[k][2]) ;
+					fprintf( logfile, "%s             wt2=(%15.10G, %15.10G, %15.10G)\n", "\t", wt2[k][0], wt2[k][1], wt2[k][2]) ;
+					fprintf( logfile, "%s             wt3=(%15.10G, %15.10G, %15.10G)\n", "\t", wt3[n3[k]-1][k][0], wt3[n3[k]-1][k][1], wt3[n3[k]-1][k][2]) ;
+					fprintf( logfile, "\n") ;
+					/* shift vectors for osl and isl parallelepiped */
+					da_isl[0] = 0.5 * ( n1[k] * ( v1[k][0] - w1[k][0] ) + n2[k] * ( v2[k][0] - w2[k][0] ) + n3[k] * ( v3[k][0] - w3[n3[k]-1][k][0] ) ) ;
+					da_isl[1] = 0.5 * ( n1[k] * ( v1[k][1] - w1[k][1] ) + n2[k] * ( v2[k][1] - w2[k][1] ) + n3[k] * ( v3[k][1] - w3[n3[k]-1][k][1] ) ) ;
+					da_isl[2] = 0.5 * ( n1[k] * ( v1[k][2] - w1[k][2] ) + n2[k] * ( v2[k][2] - w2[k][2] ) + n3[k] * ( v3[k][2] - w3[n3[k]-1][k][2] ) ) ;
+					fprintf( logfile, "%s             da_isl=(%15.10G, %15.10G, %15.10G)\n", "\t", da_isl[0], da_isl[1], da_isl[2] ) ;
+
+					da_osl[0] = 0.5 * ( n1[k] * ( v1[k][0] - wt1[k][0] ) + n2[k] * ( v2[k][0] - wt2[k][0] ) + n3[k] * ( v3[k][0] - wt3[n3[k]-1][k][0] ) ) ;
+					da_osl[1] = 0.5 * ( n1[k] * ( v1[k][1] - wt1[k][1] ) + n2[k] * ( v2[k][1] - wt2[k][1] ) + n3[k] * ( v3[k][1] - wt3[n3[k]-1][k][1] ) ) ;
+					da_osl[2] = 0.5 * ( n1[k] * ( v1[k][2] - wt1[k][2] ) + n2[k] * ( v2[k][2] - wt2[k][2] ) + n3[k] * ( v3[k][2] - wt3[n3[k]-1][k][2] ) ) ;
+					fprintf( logfile, "%s             da_osl=(%15.10G, %15.10G, %15.10G)\n", "\t", da_osl[0], da_osl[1], da_osl[2] ) ;
+					fprintf( logfile, "\n") ;
+					/* shell thicknesses as the projection of span vectors to the surface normals of the parallelepipeds planes */
+					vp( vdummy, v2[k], v3[k]) ;
+					fprintf( logfile, "%s             d_tot_1=%15.10G [nm]\n", "\t", fabs( sp( da_osl, vdummy) / betrag( vdummy ) ) ) ;					vp( vdummy, v1[k], v3[k]) ;
+					fprintf( logfile, "%s             d_tot_2=%15.10G [nm]\n", "\t", fabs( sp( da_osl, vdummy) / betrag( vdummy ) ) ) ;					vp( vdummy, v1[k], v2[k]) ;
+					fprintf( logfile, "%s             d_tot_3=%15.10G [nm]\n", "\t", fabs( sp( da_osl, vdummy) / betrag( vdummy ) ) ) ;
+					fprintf( logfile, "\n") ;
+					vp( vdummy, w2[k], w3[n3[k]-1][k]) ;
+					fprintf( logfile, "%s             d_osl_1=%15.10G [nm]\n", "\t", fabs( ( sp( da_osl, vdummy) - sp( da_isl, vdummy) ) / betrag( vdummy ) ) ) ;
+					vp( vdummy, w1[k], w3[n3[k]-1][k]) ;
+					fprintf( logfile, "%s             d_osl_2=%15.10G [nm]\n", "\t", fabs( ( sp( da_osl, vdummy) - sp( da_isl, vdummy) ) / betrag( vdummy ) ) ) ;
+					vp( vdummy, w1[k], w2[k]) ;
+					fprintf( logfile, "%s             d_osl_3=%15.10G [nm]\n", "\t", fabs( ( sp( da_osl, vdummy) - sp( da_isl, vdummy) ) / betrag( vdummy ) ) ) ;
+					fprintf( logfile, "\n") ;
+					vp( vdummy, v2[k], v3[k]) ;
+					fprintf( logfile, "%s             d_isl_1=%15.10G [nm]\n", "\t", fabs( sp( da_isl, vdummy) / betrag( vdummy ) ) ) ;
+					vp( vdummy, v1[k], v3[k]) ;
+					fprintf( logfile, "%s             d_isl_2=%15.10G [nm]\n", "\t", fabs( sp( da_isl, vdummy) / betrag( vdummy ) ) ) ;
+					vp( vdummy, v1[k], v2[k]) ;
+					fprintf( logfile, "%s             d_isl_3=%15.10G [nm]\n", "\t", fabs( sp( da_isl, vdummy) / betrag( vdummy ) ) ) ;
+					fprintf( logfile, "\n") ;
+
 					fflush (logfile) ;
 				}
 	
@@ -9359,15 +9458,14 @@ class XNDiff
 			/* ORIENTATIONAL AVERAGE / COHERENT SCATTERING FOR CURRENT PARTICLES AND THE FULL ENSEMBLE */
 			/*******************************************************************************************/
 			/* For security default(none) clause is used -> each variable in the parallel block must be declared explicitely 
-			   either as private or shared (without clause default would be shared) -> prevent errors .
+			   either as private or shared (without clause default would be shared) -> prevent errors.
 			   Outer parallel loop variable must not be declared private, but nested (inner) loop counters have to be declared private in C(++) !!!
 			   Similar settings are applied in compute_structure_amplitude().
 			*/
-			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread) shared( dS_X, dS_n, dYc_X, dYc_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
+			#pragma omp parallel private( ii, jj, ll, mm, pp, qq, av_ac, sinav_ac, cosav_ac, av_pc, sinav_pc, cosav_pc, weight_factor, ddummy1, ddummy2, ddummy3, G, da_isl, da_osl, vdummy, cs, s, piQv1, piQv2, piQv3, piQw1, piQw2, piQw3, piQwt1, piQwt2, piQwt3, exp_Qv1, exp_Qv2, exp_Qv3, exp_N1Qv1, exp_N2Qv2, exp_N3Qv3, exp_N1Qw1, exp_N2Qw2, exp_N3Qw3, exp_N1Qwt1, exp_N2Qwt2, exp_N3Qwt3, GA_N1_N2, cdummy11, cdummy12, cdummy13, cdummy21, cdummy22, cdummy23, cdummy31, cdummy32, cdummy33, cdummy41, cdummy42, cdummy43, cdummy51, cdummy52, cdummy53, cdummy61, cdummy62, cdummy63, cdummy71, cdummy72, cdummy73, GA, P, P_isl, P_osl, FFF_cdummy, Bg_X, dE_X, Bg_n, dE_n, idummy, exp_RQ, k_phi, dEstack_X, dEstack_n, dYc_X_stack, dYc_n_stack, exp_DRQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread) shared( dS_X, dS_n, dYc_X, dYc_n, Yc_X, Yc_n, Yi_n, kk_jj_count, nspsp, rtstr, pr, c_rep, stdout, ind_r3, v1, v2, v3, kf1, kf2, kf3, okf1, okf2, okf3, n1, n2, n3, R, V, V_isl, V_osl, drerho_dm_osl, drerho_osl_isl, drerho_isl, dsld_dm_osl, dsld_osl_isl, dsld_isl) reduction(+:single_sum_weight_factor) reduction(+:sum_weight_factor) default(none) if ( openmp_flag )
 			{
 				/* prepare parallel region, allocate dynamic arrays that should be used as private variables
-				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				   Note that variables allocated/defined within a parallel section are by default private.
 				   dE_X/n and related variables are private for each thread, their data will be written to newly introduced private dummy arrays like
 				   dS_X/n_parallel_thread, dYc_X/n_parallel_thread and related ones. They will be at the end written to dS_X/n, dYc_X/n etc.
@@ -9411,9 +9509,14 @@ class XNDiff
 				exp_N3Qv3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				exp_N3Qw3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				exp_N3Qwt3 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+
 				cdummy41 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				cdummy42 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 				cdummy43 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+
+				cdummy71 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+				cdummy72 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
+				cdummy73 = (dcmplx *) calloc( par->nsp, sizeof(dcmplx)) ;
 
 				exp_RQ = (dcmplx *) calloc( par->nms, sizeof(dcmplx)) ;
 
@@ -9486,7 +9589,7 @@ class XNDiff
 				#pragma omp for schedule(static)
 				for ( kk=0; kk<nav_ac; ++kk)
 				{
-					/* GA, P_osl, P_isl, P, cdummy41, cdummy42, cdummy43, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, dE_X, dE_n will be overwritten */
+					/* GA, P_osl, P_isl, P, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, dE_X, dE_n will be overwritten */
 					/* dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread will be updated (+=) within each thread and finally written to the corresponding variables */
 
 					/* reset variables to 0.0 */
@@ -9535,9 +9638,14 @@ class XNDiff
 // 						exp_N3Qv3[mm] = dcmplx( 0.0, 0.0) ;
 // 						exp_N3Qw3[mm] = dcmplx( 0.0, 0.0) ;
 // 						exp_N3Qwt3[mm] = dcmplx( 0.0, 0.0) ;
+//
 // 						cdummy41[mm] = dcmplx( 0.0, 0.0) ;
 // 						cdummy42[mm] = dcmplx( 0.0, 0.0) ;
 // 						cdummy43[mm] = dcmplx( 0.0, 0.0) ;
+//
+// 						cdummy71[mm] = dcmplx( 0.0, 0.0) ;
+// 						cdummy72[mm] = dcmplx( 0.0, 0.0) ;
+// 						cdummy73[mm] = dcmplx( 0.0, 0.0) ;
 // 					}
 // 
 // 					for ( pp=0; pp<par->nms; ++pp) 
@@ -9706,7 +9814,7 @@ class XNDiff
 									/* w_j = kf_j * v_j */
 									exp_N3Qw3[mm] = exp ( dcmplx( 0.0, 2.0 * piQw3 * (double)(mm+1) ) ) - 1.0 ;
 									/* wt_j = okf_j * v_j */
-									exp_N3Qwt3[mm] = exp ( dcmplx( 0.0, 2.0 * piQwt3 * (double)(mm+1)  ) ) - 1.0 ;
+									exp_N3Qwt3[mm] = exp ( dcmplx( 0.0, 2.0 * piQwt3 * (double)(mm+1) ) ) - 1.0 ;
 
 									if (fabs(piQwt3) > 1e-10) { cdummy41[mm] = exp_N3Qwt3[mm] / ( dcmplx( 0.0, 2.0 * piQwt3) ) ; }
 									else { cdummy41[mm] = dcmplx( (double)(mm+1), 0.0) ; }
@@ -9716,6 +9824,14 @@ class XNDiff
 
 									if (fabs(piQv3) > 1e-10) { cdummy43[mm] = exp_N3Qv3[mm] / ( dcmplx( 0.0, 2.0 * piQv3) ); }
 									else { cdummy43[mm] = dcmplx( (double)(mm+1), 0.0) ; }
+
+
+									/* for parallelepiped shifts */
+									/* wt_j = okf_j * v_j */
+									cdummy71[mm] = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0) ) ;
+									/* w_j = kf_j * v_j */
+									cdummy72[mm] = dcmplx( 1.0, 0.0 ) ; //exp ( dcmplx( 0.0, 0.0) ) ;
+									cdummy73[mm] = dcmplx( 1.0, 0.0 ) ;
 								}
 
 								/* over all par->nms N1,N2 configurations */
@@ -9764,6 +9880,7 @@ class XNDiff
 									exp_N1Qwt1 = exp ( dcmplx( 0.0, 2.0 * piQwt1 * (double)n1[pp] ) ) - 1.0 ;
 									exp_N2Qwt2 = exp ( dcmplx( 0.0, 2.0 * piQwt2 * (double)n2[pp] ) ) - 1.0 ;
 
+
 									/* for GA */
 									GA_N1_N2 = dcmplx( 1.0, 0.0) ;
 
@@ -9795,6 +9912,22 @@ class XNDiff
 									else { cdummy33 = dcmplx( ( (double)n2[pp]), 0.0) ; }
 
 
+
+									/* for parallelepiped shifts, use -1.0 for w and wt */
+
+									/* wt_j = okf_j * v_j */
+									cdummy51 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+									cdummy61 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+
+									/* w_j = kf_j * v_j */
+									cdummy52 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+									cdummy62 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+
+									cdummy53 = dcmplx( 1.0, 0.0 ) ;
+									cdummy63 = dcmplx( 1.0, 0.0 ) ;
+
+
+
 									/* compute scattering contribution for all single nanoparticles with n3 ~ m + 1 = 1...nsp */
 									/* save in dE[mm][pp] and add |dE[mm][pp]|^2 to dS[ii][mm][pp] and S[ii][mm] */
 									for ( mm=0; mm<par->nsp; ++mm)
@@ -9821,10 +9954,24 @@ class XNDiff
 										/* S_D^k=S^{k''}(rho_dm-rho_osl) + S^{k'}(rho_osl-rho_isl) + S^{k}(rho_isl) */
 										/* compute in 3 steps Bg=S_D^k */
 
-										cdummy11 = cdummy21 * cdummy31 * cdummy41[mm] ;
-										cdummy12 = cdummy22 * cdummy32 * cdummy42[mm] ;
-										cdummy13 = cdummy23 * cdummy33 * cdummy43[mm] ;
+										/* cdummy11 adds all terms incl shift phase for osl parallelepiped */
+										/* cdummy<j+1>1 = [ exp( i N<j> Qwt<j> )-1 ] / ( i Qwt<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>1 = 1.0 j=1,2,3 */
 
+										/* cdummy12 adds all terms incl shift phase for isl parallelepiped */
+										/* cdummy<j+1>2 = [ exp( i N<j> Qw<j> )-1 ] / ( i Qw<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>2 = 1.0 j=1,2,3 */
+
+										/* cdummy13 adds all terms (shift phase = 1.0) for cry parallelepiped */
+										/* cdummy<j+1>3 = [ exp( i N<j> Qv<j> )-1 ] / ( i Qv<j> ) j=1,2,3 */
+ 										/* cdummy<j+4>3 = exp( i / 2 * N<j> ( Qv<j> - Qv<j> ) ) = 1.0 j=1,2,3 */
+
+										cdummy11 = cdummy21 * cdummy31 * cdummy41[mm] * cdummy51 * cdummy61 * cdummy71[mm] ;
+										cdummy12 = cdummy22 * cdummy32 * cdummy42[mm] * cdummy52 * cdummy62 * cdummy72[mm] ;
+										cdummy13 = cdummy23 * cdummy33 * cdummy43[mm] * cdummy53 * cdummy63 * cdummy73[mm] ;
+
+										/* V_osl and V_isl are unit cell volumes for parallelepiped incl shells */
+										/* VN_isl, VN_osl = n1 * n2 * n3 * V_isl, V_osl */
 										P_osl[mm][pp] = cdummy11 * ((dcmplx) V_osl[mm][pp]) ; /* [nm^3] */
 										P_isl[mm][pp] = cdummy12 * ((dcmplx) V_isl[mm][pp]) ;
 										P[mm][pp] = cdummy13 * ((dcmplx) V[mm][pp]) ;
@@ -9992,6 +10139,24 @@ class XNDiff
 									if (fabs(piQv2) > 1e-10) { cdummy33 = exp_N2Qv2 / ( dcmplx( 0.0, 2.0 * piQv2) ) ; }
 									else { cdummy33 = dcmplx( ( (double)n2[pp]), 0.0) ; }
 
+
+
+									/* for parallelepiped shifts, use -1.0 for w and wt */
+
+									/* wt_j = okf_j * v_j */
+									cdummy51 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+									cdummy61 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+
+									/* w_j = kf_j * v_j */
+									cdummy52 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+									cdummy62 = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+
+									cdummy53 = dcmplx( 1.0, 0.0 ) ;
+									cdummy63 = dcmplx( 1.0, 0.0 ) ;
+
+
+
+
 									/* compute scattering contribution for all single nanoparticles with n3 ~ m = 1 ... par->nsp */
 									/* save in dE[mm] and add |dE[mm]|^2 to S[ii][mm] */
 									for ( mm=0; mm<par->nsp; ++mm)
@@ -10021,9 +10186,20 @@ class XNDiff
 										if (fabs(piQv3) > 1e-10) { cdummy43[0] = exp_N3Qv3[0] / ( dcmplx( 0.0, 2.0 * piQv3) ) ; }
 										else { cdummy43[0] = dcmplx( (double)(mm+1), 0.0) ; }
 
-										cdummy11 = cdummy21 * cdummy31 * cdummy41[0] ;
-										cdummy12 = cdummy22 * cdummy32 * cdummy42[0] ;
-										cdummy13 = cdummy23 * cdummy33 * cdummy43[0] ;
+
+
+										/* for parallelepiped shifts */
+										/* wt_j = okf_j * v_j */
+										cdummy71[0] = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+										/* w_j = kf_j * v_j */
+										cdummy72[0] = dcmplx( 1.0, 0.0 ) ; // exp ( dcmplx( 0.0, 0.0 ) ) ;
+										cdummy73[0] = dcmplx( 1.0, 0.0 ) ;
+
+
+
+										cdummy11 = cdummy21 * cdummy31 * cdummy41[0] * cdummy51 * cdummy61 * cdummy71[0] ;
+										cdummy12 = cdummy22 * cdummy32 * cdummy42[0] * cdummy52 * cdummy62 * cdummy72[0] ;
+										cdummy13 = cdummy23 * cdummy33 * cdummy43[0] * cdummy53 * cdummy63 * cdummy73[0] ;
 
 										P_osl[mm][pp] = cdummy11 * ((dcmplx) V_osl[mm][pp]) ; /* [nm^3] */
 										P_isl[mm][pp] = cdummy12 * ((dcmplx) V_isl[mm][pp]) ;
@@ -10100,7 +10276,12 @@ class XNDiff
 							} /* if av_mode == 0,2,3 or 1 */
 
 
+
+
+
 							/* compute scattering contribution for the randomly chosen stacks */
+
+
 
 
 							/* Actually there's no need for exp_RQ[0], computation might be omitted */
@@ -10390,8 +10571,7 @@ class XNDiff
 
 
 				/* free dynamic arrays allocated within the parallel region
-				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-				   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+				   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 				*/
 				for ( mm=0; mm<par->nsp; ++mm)
 				{
@@ -10428,9 +10608,14 @@ class XNDiff
 				free(exp_N3Qv3) ;
 				free(exp_N3Qw3) ;
 				free(exp_N3Qwt3) ;
+
 				free(cdummy41) ;
 				free(cdummy42) ;
 				free(cdummy43) ;
+
+				free(cdummy71) ;
+				free(cdummy72) ;
+				free(cdummy73) ;
 
 				free(exp_RQ) ;
 
@@ -11039,8 +11224,7 @@ class XNDiff
 		free(MULTIPLICITY) ;
 
 		/* the following arrays have been already deallocated within the parallel region
-		   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, exp_RQ,
-		   dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
+		   GA, P, P_isl, P_osl, dE_X, dE_n, exp_N3Qv3, exp_N3Qw3, exp_N3Qwt3, cdummy41, cdummy42, cdummy43, cdummy71, cdummy72, cdummy73, exp_RQ, dS_X_parallel_thread, dS_n_parallel_thread, dYc_X_parallel_thread, dYc_n_parallel_thread
 		*/
 
 		/* free S_X/n (nspsp x rho/sld_multi.n x np ), 
@@ -11700,7 +11884,7 @@ class XNDiff
 											td2 type of distribution for n3
 											-0 norm.
 											-1 log. norm.
-											-2 discrete (requires -cis option)
+											-2 discrete (requires -cis or -nis option)
 											stackmode mode for particle stacks e.g. 0
 											-0 use td1-distribution for d1,d2,D (kind of default for triglyceride dispersions with S100)
 											-1 same as 0; additionally check for collisions with DMIN
